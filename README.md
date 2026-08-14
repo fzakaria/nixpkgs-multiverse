@@ -63,10 +63,12 @@ VERSION  FIRST       LAST        REVS
 3.14.6   2026-07-08  current     17
 ```
 
-Pin a package from a NixOS or home-manager configuration:
+Pin a package from a NixOS, nix-darwin, or home-manager configuration:
 
 ```nix
 {
+  # Use darwinModules.default on nix-darwin or homeManagerModules.default in
+  # home-manager.
   imports = [ inputs.multiverse.nixosModules.default ];
 
   multiverse.enable = true;

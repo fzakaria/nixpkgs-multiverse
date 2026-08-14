@@ -1,9 +1,12 @@
-# The NixOS and home-manager module
+# The NixOS, nix-darwin, and home-manager module
 
-`nixosModules.default` and `homeManagerModules.default` share every option below:
+`nixosModules.default`, `darwinModules.default`, and `homeManagerModules.default`
+share every option below:
 
 ```nix
 {
+  # Use darwinModules.default on nix-darwin or homeManagerModules.default in
+  # home-manager.
   imports = [ inputs.multiverse.nixosModules.default ];
 
   multiverse = {

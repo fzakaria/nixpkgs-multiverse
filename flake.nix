@@ -516,11 +516,16 @@
           builtins.mapAttrs (attr: version: mv.version attr version) pins;
       };
 
-      # One shared core, two entry points. The wrappers differ only in which
-      # package list they append to; see modules/multiverse.nix for why neither
-      # of them goes anywhere near `nixpkgs.overlays`.
+      # One shared core, three entry points. The wrappers differ only in which
+      # package list they append to; see modules/multiverse.nix for why none of
+      # them goes anywhere near `nixpkgs.overlays`.
       nixosModules = rec {
         multiverse = ./modules/nixos.nix;
+        default = multiverse;
+      };
+
+      darwinModules = rec {
+        multiverse = ./modules/darwin.nix;
         default = multiverse;
       };
 

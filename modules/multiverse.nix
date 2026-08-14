@@ -1,7 +1,7 @@
-# The shared core of the NixOS and home-manager modules: every option, and the
-# single multiverse the whole module resolves against. The two wrappers around
-# this file add exactly one line each — the package list their own module system
-# understands.
+# The shared core of the NixOS, nix-darwin, and home-manager modules: every
+# option, and the single multiverse the whole module resolves against. The three
+# wrappers around this file add exactly one line each — the package list their
+# own module system understands.
 #
 # Nothing here touches `nixpkgs.overlays`, and that is deliberate. Rewriting
 # `pkgs.<attr>` through an overlay is the obvious way to expose a pin, and it is
@@ -10,8 +10,8 @@
 # and that variant ignores every `nixpkgs.*` definition while warning about the
 # file that set it. A module built on overlays would silently do nothing in the
 # most common home-manager deployment there is. Everything below resolves to
-# plain derivations, which works in all four shapes: NixOS, standalone
-# home-manager, and home-manager as a submodule with `useGlobalPkgs` either way.
+# plain derivations, which works for NixOS, nix-darwin, standalone home-manager,
+# and home-manager as a submodule with `useGlobalPkgs` either way.
 #
 # The overlay is still available for callers who genuinely want `pkgs.<attr>`
 # rewritten — as `multiverse.lib.pinOverlay`, applied by hand at the layer where
@@ -250,8 +250,9 @@ in
       defaultText = lib.literalExpression "[ <derivation> ... ]";
       description = ''
         Everything this module installs: every pin, every locked package, plus
-        every soaked package when `cooldown.enable` is set. The NixOS and
-        home-manager wrappers each append this to their own package list.
+        every soaked package when `cooldown.enable` is set. The NixOS,
+        nix-darwin, and home-manager wrappers each append this to their own
+        package list.
       '';
     };
   };

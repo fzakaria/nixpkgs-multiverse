@@ -1,10 +1,10 @@
-# Tests the NixOS and home-manager modules by evaluating them through
-# `lib.evalModules` directly:
+# Tests the NixOS, nix-darwin, and home-manager modules by evaluating them
+# through `lib.evalModules` directly:
 #
 #   nix eval --json -f tests/module.nix --apply 'f: f { }'
 #
-# Both wrappers are exercised against the same core, which is the property that
-# matters: the two entry points are supposed to differ only in which package
+# All wrappers are exercised against the same core, which is the property that
+# matters: the three entry points are supposed to differ only in which package
 # list they append to.
 #
 # A full nixosSystem is not needed to check that, and would drag in the whole
@@ -70,6 +70,7 @@ let
   };
 
   nixos = eval ../modules/nixos.nix settings;
+  darwin = eval ../modules/darwin.nix settings;
   home = eval ../modules/home-manager.nix settings;
 
   # Cooldown left off, to check that `packages` then carries the pin alone.
@@ -123,6 +124,8 @@ in
 assert builtins.length nixos.multiverse.packages == 2;
 assert nixos.environment.systemPackages == nixos.multiverse.packages;
 assert nixos.home.packages == [ ];
+assert darwin.environment.systemPackages == darwin.multiverse.packages;
+assert darwin.home.packages == [ ];
 assert home.home.packages == home.multiverse.packages;
 assert home.environment.systemPackages == [ ];
 
