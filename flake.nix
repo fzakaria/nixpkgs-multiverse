@@ -1,7 +1,7 @@
 {
   description = "Every nixpkgs revision, reachable from a single evaluation";
 
-  # Deliberately empty.
+  # Deliberately contains no nixpkgs revisions.
   #
   # It is tempting to declare each indexed revision as a flake input. Do not:
   # flake inputs are fetched EAGERLY. Measured on this repo, a flake with three
@@ -13,10 +13,13 @@
   # Revisions are instead fetched lazily from index/versions.json via
   # builtins.fetchTree, so only the revisions actually touched are ever
   # materialised, and the number of indexed revisions can grow without bound.
-  inputs = { };
+  #
+  # flake-schemas is the sole input: it supplies the standard schemas alongside
+  # the custom multiverse schema below, and contains no nixpkgs input of its own.
+  inputs.flake-schemas.url = "github:DeterminateSystems/flake-schemas";
 
   outputs =
-    { self, ... }:
+    { self, flake-schemas, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -460,11 +463,81 @@
         add-narhashes = "Fill in narHash for revisions that lack one";
         update-readme-status = "Rewrite the status block at the top of README.md";
       };
+
+      # Flake schema to display the custom multiverse output. The inventory
+      # deliberately stops at the API's immediate children: walking into
+      # `tip`, `versions`, or `installables` would materialise revisions merely
+      # to run `nix flake show`, defeating the API's lazy-fetch design.
+      multiverseSchema = {
+        version = 1;
+        doc = ''
+          The `multiverse` output provides the nixpkgs revision and package
+          version index for each supported system.
+        '';
+        inventory =
+          output:
+          let
+            what = {
+              at = "Nixpkgs package set selector";
+              daysBehind = "Nixpkgs soak-period selector";
+              flakeAt = "Nixpkgs flake selector";
+              goneSince = "package disappearance lookup";
+              history = "package version history index";
+              historyOf = "package version history lookup";
+              index = "package version index";
+              installables = "Nixpkgs installables by revision";
+              latest = "latest package versions";
+              lifetimeOf = "package version lifetime lookup";
+              lockVersion = "multiverse lock format version";
+              readLock = "multiverse lock reader";
+              releaseTips = "Nixpkgs release tips";
+              releases = "Nixpkgs releases";
+              revOf = "package version revision lookup";
+              revs = "indexed Nixpkgs revision labels";
+              revisions = "indexed Nixpkgs revisions";
+              skippedRevisions = "skipped Nixpkgs revisions";
+              tip = "latest indexed Nixpkgs package set";
+              version = "package version selector";
+              versionAt = "package version-at-revision lookup";
+              versions = "packages by version";
+              versionsOf = "package versions lookup";
+            };
+          in
+          {
+            children = builtins.mapAttrs (system: api: {
+              forSystems = [ system ];
+              children = builtins.mapAttrs (name: _: {
+                what = what.${name} or "multiverse API value";
+              }) api;
+            }) output;
+          };
+      };
     in
     {
       # The multiverse API, per system.
       #   nix eval .#multiverse.x86_64-linux.versionsOf --apply 'f: f "python3"'
       multiverse = forAllSystems (system: import ./multiverse.nix { inherit system; });
+
+      # Retain the standard schemas for the outputs this flake actually exposes
+      # and add the project-specific one. home-manager's conventional output
+      # name differs from the schema's, but its module shape is the same.
+      schemas = {
+        inherit (flake-schemas.exportedSchemas)
+          apps
+          checks
+          darwinModules
+          devShells
+          exportedSchemas
+          formatter
+          legacyPackages
+          nixosModules
+          packages
+          schemas
+          ;
+        homeManagerModules = flake-schemas.exportedSchemas.homeModules;
+        multiverse = multiverseSchema;
+      };
+      exportedSchemas.multiverse = multiverseSchema;
 
       lib = {
         # `mkMultiverse` for callers who need to pass config/overlays through.
