@@ -69,6 +69,15 @@ home-manager.lib.homeManagerConfiguration {
 }
 ```
 
+For a nix-darwin configuration, you can also wire it through `pkgs`:
+
+```nix
+nix-darwin.lib.darwinSystem {
+  pkgs = mv.at "26.05"; # or mv.tip, or mv.at "2026-03-01"
+  modules = [ ./configuration.nix ];
+}
+```
+
 NixOS needs one more step: `nixosSystem` lives on the nixpkgs *flake*, a
 package set's `lib` does not have it, so build the system from `flakeAt`:
 
