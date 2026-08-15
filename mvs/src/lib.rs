@@ -13,4 +13,5 @@ pub mod query;
 pub mod run;
 pub mod select;
 pub mod solve;
+pub mod store;
 pub mod version;

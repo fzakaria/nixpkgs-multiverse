@@ -18,7 +18,8 @@ and pin commands, plus the full revision and release tables.
 [The `mvs` CLI](./docs/cli.md) ·
 [NixOS / home-manager module](./docs/modules.md) ·
 [Replacing nixpkgs inputs](./docs/flake-inputs.md) ·
-[Building the index](./docs/building-the-index.md)
+[Building the index](./docs/building-the-index.md) ·
+[The store-path index](./docs/store-paths.md)
 
 Also published at <https://nixmultiverse.com/docs/>.
 
@@ -49,6 +50,19 @@ Python 3.14.6
 $ nix run github:fzakaria/nixpkgs-multiverse#tip.hello
 $ nix run github:fzakaria/nixpkgs-multiverse#26.05.hello
 $ nix shell github:fzakaria/nixpkgs-multiverse#967d40bec14b.python3
+```
+
+The commands above fetch and evaluate a ~378 MB nixpkgs tree the first time.
+The **fast path** skips both: the [store-path index](./docs/store-paths.md)
+already knows the path Hydra built, so Nix substitutes it straight from
+cache.nixos.org — seconds instead of minutes, after
+[tomberek](https://github.com/tomberek)'s
+[fastpkgs](https://github.com/tomberek/fastpkgs) trick. Append the output
+(`.out`) — a fake derivation has nothing to build, only a path to fetch:
+
+```console
+$ nix shell 'github:fzakaria/nixpkgs-multiverse#fast.versions.python3."3.8.9".out'
+$ nix build 'github:fzakaria/nixpkgs-multiverse#fast.latest.hello.out'
 ```
 
 The same questions answered offline, out of a database baked into the flake,

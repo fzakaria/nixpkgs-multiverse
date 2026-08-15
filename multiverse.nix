@@ -30,6 +30,16 @@
   # Only consulted by the "local" fetcher, which cannot guess where a clone
   # lives, so there is no default worth having.
   nixpkgsSource ? null,
+  # What `fast.*` does for a version the store-path index has no digest for.
+  #   "throw" — fail loudly, naming the eval selector to use. The default:
+  #             nothing called fast should quietly start a ~378 MB fetch.
+  #   "eval"  — fall back to the real derivation transparently. For scripts
+  #             that want coverage over predictability.
+  fastFallback ? "throw",
+  # A directory holding outpaths.json, tip-outpaths.json and outs.json, for
+  # vendored or locally built artifacts. When null the files are fetched from
+  # the release assets data-pins.json names, verified by narHash.
+  dataOverride ? null,
 }:
 
 let
@@ -506,6 +516,182 @@ let
   # Revisions inside the covered prefix that were never extracted, so a gap in a
   # run can be told apart from a revision nobody ever looked at.
   skipped = checkedHistory.skipped;
+
+  # ---------------------------------------------------------------------------
+  # The fast path: fake derivations over the store-path index, after
+  # tomberek's fastpkgs (github.com/tomberek/fastpkgs) mkFakeDerivation trick.
+  #
+  # An attrset that walks and quacks like a derivation, whose outPath is the
+  # digest the index recorded, given real store context via
+  # builtins.appendContext. `nix build` / `nix shell` then treat the path as
+  # an opaque store reference and substitute it — full closure included —
+  # from cache.nixos.org. No nixpkgs fetch, no evaluation of one, no
+  # experimental features. The census is what makes this honest: every
+  # indexed address was verified to still substitute.
+  #
+  # Everything below is forced only when a fast.* value is, so the artifacts
+  # pin costs nothing until the first fake is asked for — the same
+  # nothing-is-eager doctrine as the revisions themselves.
+  # ---------------------------------------------------------------------------
+
+  # The real-derivation resolver, hoisted out of the exported set because the
+  # fast path below hands it out as `.eval` on every fake. `version` in the
+  # exported set is this exact function.
+  versionDrv =
+    attr: ver:
+    let
+      i = (versionsFor attr).${ver} or null;
+      known = sortVersions (builtins.attrNames (versionsFor attr));
+    in
+    if i == null then
+      throw ''
+        multiverse: no revision provides ${attr} ${ver}.
+        Known versions: ${
+          if known == [ ] then "(attribute not in index)" else builtins.concatStringsSep " " known
+        }
+      ''
+    else
+      instances.${toString i}.${attr};
+
+  dataPins = builtins.fromJSON (builtins.readFile ./data-pins.json);
+
+  # One artifact file as a local path: the vendored tree when dataOverride is
+  # set, otherwise a fetchTree "file" fetch of the pinned release asset. The
+  # narHash makes the pin fail closed against any overwritten asset.
+  artifactPath =
+    name:
+    if dataOverride != null then
+      dataOverride + "/${name}"
+    else
+      let
+        pin =
+          dataPins.files.${name}
+            or (throw "multiverse: data-pins.json has no pin for ${name}; re-run tools/bump-data-pin.sh");
+      in
+      (builtins.fetchTree {
+        type = "file";
+        url = "${dataPins.baseUrl}/${pin.tag}/${name}";
+        inherit (pin) narHash;
+      }).outPath;
+
+  readArtifact = name: builtins.fromJSON (builtins.readFile (artifactPath name));
+
+  # Closed pairs, plus the snapshot of what was current when the pin was cut.
+  # Both files are keyed, timeless truth — (attr, version) -> digest — so a
+  # lagging pin only loses the fast path for versions that closed since; the
+  # eval fallback serves those meanwhile.
+  fastClosed = readArtifact "outpaths.json";
+  fastTip = readArtifact "tip-outpaths.json";
+
+  # { attr -> { version -> [digest, drv-name-if-differs, ...] } }
+  fastIndex =
+    fastClosed.attrs
+    // builtins.mapAttrs (attr: vers: (fastClosed.attrs.${attr} or { }) // vers) fastTip.attrs;
+
+  # { drv name -> { output suffix -> digest } }: the sibling outputs of
+  # multi-output packages. "out" is dropped: it is the default output the
+  # index already records, and a stray <name>-out path must not shadow it.
+  siblingOutputs = builtins.mapAttrs (_: outs: builtins.removeAttrs outs [ "out" ]) (
+    readArtifact "outs.json"
+  );
+
+  # The store-path index is built from the x86_64-linux channel listings, so
+  # handing its digests to any other system would substitute foreign binaries.
+  fastSupported = system == "x86_64-linux";
+
+  checkedFastFallback =
+    if fastFallback == "throw" || fastFallback == "eval" then
+      fastFallback
+    else
+      throw ''multiverse: fastFallback must be "throw" or "eval", not "${toString fastFallback}"'';
+
+  # A bare store path only substitutes if the string carries context naming
+  # it; appendContext is what turns a digest from the index into something
+  # `nix build` will fetch.
+  storePathWithContext =
+    p:
+    builtins.appendContext p {
+      ${p} = {
+        path = true;
+      };
+    };
+
+  fastEntryFor = attr: ver: (fastIndex.${attr} or { }).${ver} or null;
+
+  # The fake derivation for one matched pair. `evalDrv` is the real,
+  # revision-exact derivation, carried on `.eval` for everything a fake
+  # cannot do: override, nix develop, drvPath, full meta.
+  mkFake =
+    attr: ver: entry: evalDrv:
+    if !fastSupported then
+      throw "multiverse: fast covers x86_64-linux only — the store-path index is built from the x86_64 channel listings. Use the eval path for ${system}."
+    else
+      let
+        digest = builtins.elemAt entry 0;
+        drvName = if builtins.length entry > 1 then builtins.elemAt entry 1 else "${attr}-${ver}";
+        siblings = siblingOutputs.${drvName} or { };
+
+        # Each output is the bare context-carrying store path string, not a
+        # nested attrset. That is what makes `nix build .#…hello."2.12.2".out`
+        # work: the CLI sees a store path and substitutes it, no derivation
+        # required. The attrset spelling (an output as another derivation
+        # attrset) would send the CLI looking for the drvPath there is not.
+        outputPaths = {
+          out = storePathWithContext "/nix/store/${digest}-${drvName}";
+        }
+        // builtins.mapAttrs (
+          suffix: d: storePathWithContext "/nix/store/${d}-${drvName}-${suffix}"
+        ) siblings;
+      in
+      {
+        type = "derivation";
+        name = drvName;
+        pname = (builtins.parseDrvName drvName).name;
+        version = ver;
+        system = "x86_64-linux";
+        outputs = [ "out" ] ++ builtins.attrNames siblings;
+        outputName = "out";
+        outPath = outputPaths.out;
+        # Deliberately minimal: nothing evaluated nixpkgs, so there is
+        # nothing honest to put here. `.eval.meta` has the real thing.
+        meta = { };
+        # `nix build`/`nix run`/`nix shell` on the bare attrpath ask for the
+        # drvPath a fake cannot have, so the message says what to append.
+        drvPath = throw ''
+          multiverse: ${drvName} is a fast fake derivation and has no drvPath — it
+          substitutes by store path alone. Append the output: …${attr}."${ver}".out
+          (outputs: ${builtins.concatStringsSep " " ([ "out" ] ++ builtins.attrNames siblings)}).
+          For override / nix develop / a real derivation, use .eval instead.
+        '';
+        eval = evalDrv;
+      }
+      // outputPaths;
+
+  # A miss under fast.*: throw naming the eval selector — never a surprise
+  # 378 MB fetch inside something called fast — unless the importer opted
+  # into transparent fallback.
+  fastMissing =
+    attr: ver: evalSelector: evalDrv:
+    if checkedFastFallback == "eval" then
+      evalDrv
+    else
+      throw ''
+        multiverse: fast has no store path for ${attr} ${ver} — the pair is not in
+        the store-path index (never built by Hydra, unfree, or newer than the data
+        pin). Use the eval path: ${evalSelector}
+        or import the multiverse with fastFallback = "eval" to fall back silently.
+      '';
+
+  fastVersion =
+    attr: ver:
+    let
+      entry = fastEntryFor attr ver;
+      evalDrv = versionDrv attr ver;
+    in
+    if entry == null then
+      fastMissing attr ver ''versions.${attr}."${ver}"'' evalDrv
+    else
+      mkFake attr ver entry evalDrv;
 in
 rec {
   inherit revisions;
@@ -746,21 +932,7 @@ rec {
   # The headline operation: a specific version of a package. Distinct graphs
   # coexist happily — Nix keeps them disjoint, so several versions of the same
   # package can sit in one buildEnv.
-  version =
-    attr: ver:
-    let
-      i = (versionsFor attr).${ver} or null;
-      known = versionsOf attr;
-    in
-    if i == null then
-      throw ''
-        multiverse: no revision provides ${attr} ${ver}.
-        Known versions: ${
-          if known == [ ] then "(attribute not in index)" else builtins.concatStringsSep " " known
-        }
-      ''
-    else
-      instances.${toString i}.${attr};
+  version = versionDrv;
 
   # A lock file written by `mvs lock`, resolved to derivations:
   #
@@ -852,4 +1024,121 @@ rec {
   # A sibling attrset rather than keys in the API itself, so `builtins.attrNames`
   # on a multiverse stays readable and repl completion stays usable.
   installables = releaseTree // revisionKeys;
+
+  # ---------------------------------------------------------------------------
+  # The fast path: the selector grammar above with only the terminal step
+  # swapped — revision -> version -> digest -> fake derivation — so nothing
+  # here fetches or evaluates a nixpkgs. See mkFake above for the mechanism
+  # (after tomberek's fastpkgs) and docs/store-paths.md for the data.
+  #
+  # Three honesty classes, chosen per selector rather than approximated:
+  #
+  #   fast.versions / fast.latest / fast.tip are BIT-EXACT as of the data
+  #   pin: the digest is precisely the build the eval path resolves to.
+  #
+  #   fast.at (commit, date, label selectors) is VERSION-EXACT and
+  #   build-canonical: the right version for that revision, as the newest
+  #   build of it the index records — the index keeps one digest per
+  #   version, not one per revision.
+  #
+  #   Release selectors are EVAL-ONLY and refuse: a release branch is not an
+  #   indexed revision, and faking it from unstable-at-that-date would
+  #   silently drop backports. `at` serves releases for real.
+  #
+  # Every fake carries a lazy `.eval` holding the real, revision-exact
+  # derivation for everything a fake cannot do (override, nix develop,
+  # drvPath, meta). A pair the index has no digest for throws, naming the
+  # eval selector to use — never a surprise 378 MB fetch inside something
+  # called fast — unless the multiverse was imported with
+  # fastFallback = "eval".
+  # ---------------------------------------------------------------------------
+  fast =
+    let
+      # The whole package set at a revision, as fakes: version-exact,
+      # build-canonical. Returns fakes only — no `lib`, no `callPackage` —
+      # because there is no nixpkgs behind it.
+      fastAt =
+        sel:
+        if releaseTable ? ${sel} then
+          throw ''
+            multiverse: fast cannot serve the release "${sel}". A release branch is
+            not an indexed revision, and faking it from unstable would silently drop
+            backports. Use the eval path: at "${sel}"
+          ''
+        else
+          builtins.mapAttrs (
+            attr: _:
+            let
+              ver = versionAt attr sel;
+              entry = if ver == null then null else fastEntryFor attr ver;
+              evalDrv = (at sel).${attr};
+            in
+            if ver == null then
+              throw "multiverse: the history index has no version of ${attr} at ${sel}"
+            else if entry == null then
+              fastMissing attr ver ''(at "${sel}").${attr}'' evalDrv
+            else
+              mkFake attr ver entry evalDrv
+          ) checkedHistory.attrs;
+
+      newestOf =
+        attr: vers:
+        let
+          sorted = sortVersions (builtins.attrNames vers);
+        in
+        fastVersion attr (builtins.elemAt sorted (builtins.length sorted - 1));
+
+      # Exact-match revision keys, mirroring `installables`: full commit,
+      # 12-character prefix, label — plus each revision's date, which the
+      # attrpath grammar can afford here because fastAt re-resolves the
+      # date through the same newest-on-or-before rule `at` uses.
+      fastKeys = builtins.listToAttrs (
+        builtins.concatMap (
+          i:
+          let
+            r = revAt i;
+            value = fastAt (labelOf i);
+          in
+          [
+            {
+              name = r.rev;
+              inherit value;
+            }
+            {
+              name = builtins.substring 0 12 r.rev;
+              inherit value;
+            }
+            {
+              name = labelOf i;
+              inherit value;
+            }
+            {
+              name = r.date;
+              value = fastAt r.date;
+            }
+          ]
+        ) offsets
+      );
+    in
+    fastKeys
+    // {
+      # A specific version, zero-eval: fast.version "python3" "3.8.9".
+      version = fastVersion;
+
+      # Materialised {attr -> {version -> fake}}, the flake-installable
+      # spelling: nix shell .#fast.versions.python3."3.8.9". Covers every
+      # pair the store-path index matched, closed and current alike.
+      versions = builtins.mapAttrs (
+        attr: vers: builtins.mapAttrs (ver: _: fastVersion attr ver) vers
+      ) fastIndex;
+
+      # Newest indexed version of each attribute, as of the data pin.
+      latest = builtins.mapAttrs newestOf fastIndex;
+
+      # What was current when the pin was cut: one fake per attribute.
+      tip = builtins.mapAttrs newestOf fastTip.attrs;
+
+      # The selector form: fast.at "2022-03-15", fast.at "aae12a743f75".
+      at = fastAt;
+    };
 }

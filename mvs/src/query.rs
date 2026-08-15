@@ -90,8 +90,9 @@ fn lifetime(index: &Index, version: String, runs: &[Run]) -> Result<Lifetime> {
 }
 
 /// The error for an attribute the index has never seen, which is a different
-/// answer from an attribute that has left nixpkgs.
-fn unknown_attr(index: &Index, attr: &str) -> Result<anyhow::Error> {
+/// answer from an attribute that has left nixpkgs. Shared with the store
+/// subcommands, which hit the same case first.
+pub fn unknown_attr(index: &Index, attr: &str) -> Result<anyhow::Error> {
     let near = index.search(attr, 5)?;
     let suggestion = if near.is_empty() {
         String::new()

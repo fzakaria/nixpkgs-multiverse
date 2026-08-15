@@ -1,0 +1,57 @@
+# The weekly census: is every indexed store path still downloadable from
+# cache.nixos.org? A GET of each narinfo and a HEAD of the NAR it points at —
+# the cache remembering a path and the cache still serving its bytes are
+# different claims, and the census re-earns both every week.
+#
+# ~240k digests at the crawler's polite pace fits well inside an hour or two;
+# the 6 h job limit leaves an order of magnitude of headroom. Results publish
+# to the rolling release (they are observations with a timestamp, stale by
+# nature), and newly dead digests are appended to the crawl graph so the next
+# hourly consolidation marks them dead in the pinned artifacts too.
+name: census
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: census
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only `nix hash path` is needed here (the state restore verifies every
+      # pinned download), but the standard installer keeps the setup uniform
+      # with the other workflows.
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Restore the outpaths state
+        run: bash tools/restore-outpaths-state.sh
+
+      - name: Take the census
+        run: |
+          python3 tools/census.py \
+            --seeds index/.outpaths/data/outpaths.json index/.outpaths/data/tip-outpaths.json \
+            --out census-results.json \
+            --graph index/.outpaths/graph.jsonl.gz \
+            --date "$(date -u +%F)"
+
+      - name: Publish to the rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload data-rolling --clobber \
+            census-results.json \
+            index/.outpaths/graph.jsonl.gz

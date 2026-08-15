@@ -19,5 +19,8 @@ line tool.
    as the `nixpkgs` other flakes see.
 7. [Building the index](./building-the-index.md) explains how the data is extracted
    and refreshed.
+8. [The store-path index](./store-paths.md) explains how versions are matched
+   to cache.nixos.org store paths — the data behind `fast.*`, the census, and
+   the site's dependency and liveness views.
 
 The index itself is browsable at <https://nixmultiverse.com/>.

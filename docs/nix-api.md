@@ -92,6 +92,110 @@ nix-repl> multiverse.x86_64-linux.releases
 
 **Note**: Enumerating versions fetches nothing as it reads an index file only. A revision is materialised the first time you force a derivation.
 
+## The fast path
+
+Everything above hands back *real* derivations, which means fetching a
+~378 MB nixpkgs tree and evaluating it the first time one is forced. The
+`fast` attrset skips both: the [store-path index](./store-paths.md) already
+knows the `/nix/store` path Hydra built for every matched version, so `fast`
+builds a *fake* derivation around that path, many thanks to
+[tomberek](https://github.com/tomberek)'s
+[fastpkgs](https://github.com/tomberek/fastpkgs) trick, and Nix substitutes
+it, full closure included, straight from [cache.nixos.org](https://cache.nixos.org).
+**No nixpkgs fetch, no evaluation, no experimental features.**
+
+The selector grammar is the same, with only the terminal
+step swapped. One thing to remember: a "fake derivation" has no `drvPath`,
+so the CLI needs the *output*: append `.out` (or `.lib`, `.bin`, … for multi-output
+packages):
+
+```console
+$ nix shell 'github:fzakaria/nixpkgs-multiverse#fast.versions.python3."3.8.9".out'
+$ nix build 'github:fzakaria/nixpkgs-multiverse#fast.latest.hello.out'
+$ nix build 'github:fzakaria/nixpkgs-multiverse#fast.latest.ffmpeg.lib'
+```
+
+### `nix run` cannot take a fake
+
+`nix build` and `nix shell` accept a store path as an installable, which is
+all `.out` is. `nix run` does not, so there is no spelling of a fast selector
+that it accepts:
+
+```console
+$ nix run 'github:fzakaria/nixpkgs-multiverse#fast.latest.hello'
+error: … lacks attribute 'drvPath'
+
+$ nix run 'github:fzakaria/nixpkgs-multiverse#fast.latest.hello.out'
+error: attribute 'legacyPackages.x86_64-linux.fast.latest.hello.out.type' does not exist
+```
+
+Both errors are the same fact seen from two sides. `nix run` resolves an
+installable by forcing it as a derivation — which needs the `drvPath` a fake
+does not have — or as an *app*, which means reading `.type`, and `.out` is a
+string rather than an attrset. A bare `nix run /nix/store/…` is refused too:
+"installable does not correspond to a Nix language value".
+
+An `app` attrset alongside the fake does not help either: Nix only honours
+apps under `apps.<system>`, and mirroring the whole `fast` tree there is not
+an option, because `nix flake check` requires every attribute under
+`apps.<system>` to be an app itself and fails on a nested tree.
+
+So to *run* a fast package, use a shell, or [`mvs run`](./cli.md#running-a-version),
+which takes the store-path road by default:
+
+```console
+$ nix shell 'github:fzakaria/nixpkgs-multiverse#fast.latest.hello.out' -c hello
+Hello, world!
+
+$ mvs run hello@2.12.2
+Hello, world!
+```
+
+```nix
+# a specific version, zero-eval
+mv.fast.version "python3" "3.8.9"
+# newest indexed version, as of the pin
+mv.fast.latest.python3
+# what was current when the pin was cut
+mv.fast.tip.hello
+# a whole revision, as fakes
+mv.fast.at "2022-03-15"
+# exact revision keys work too
+mv.fast."967d40bec14b".python3
+```
+
+`fast.versions` / `fast.latest` / `fast.tip` are **bit-exact** as what you
+would get if you did the evaluation. We just go straight to the substitution
+path. Release selectors are **eval-only** and refuse: a release branch is not
+an indexed revision.
+
+Every fake carries a lazy `.eval` holding the real, revision-exact
+derivation for everything a fake cannot do: `override`, `nix develop`,
+`drvPath`, full `meta`:
+
+```nix
+(mv.fast.version "python3" "3.8.9").eval.override { ... }
+```
+
+By default, a version the store-path index has no digest for **throws**,
+so there is no surprise fetch, however this can be tuned per `mkMultiverse`: 
+
+```nix
+mkMultiverse {
+  system = "x86_64-linux";
+  # unmatched pairs fall back to the real
+  # derivation silently (default: "throw")
+  fastFallback = "eval";
+  # vendor the data files, skip the pin
+  dataOverride = ./artifacts;
+}
+```
+
+The index covers x86_64-linux; other systems throw
+rather than substitute foreign binaries. Data arrives through
+`data-pins.json` lazily: nothing is fetched until the first `fast.*` value
+is forced.
+
 ## A soak period
 
 `daysBehind` gives you the whole of nixos-unstable as it stood some number of

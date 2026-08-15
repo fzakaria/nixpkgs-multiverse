@@ -1,4 +1,5 @@
 index/.per-rev/
+index/.outpaths/
 result
 result-*
 mvs/target/

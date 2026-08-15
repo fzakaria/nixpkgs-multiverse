@@ -14,8 +14,9 @@ use clap::{Parser, Subcommand};
 use mvs::db::Index;
 use mvs::lock;
 use mvs::query::{self, Format};
-use mvs::run::{self, Execute};
+use mvs::run::{self, Execute, Speed};
 use mvs::solve;
+use mvs::store;
 
 #[derive(Parser)]
 #[command(
@@ -58,9 +59,13 @@ enum Command {
         constraints: Vec<String>,
     },
 
-    /// Run a package straight out of the revision that shipped it
+    /// Run a package, straight out of the binary cache where possible
     ///
-    /// A wrapper around `nix run`: `mvs run ripgrep@13.0.0 -- --version`.
+    /// `mvs run ripgrep@13.0.0 -- --version`. The store-path index knows
+    /// which /nix/store path the version built to, so the default path
+    /// substitutes it and runs it — no nixpkgs fetch, no evaluation. A
+    /// version the index never matched falls back to fetching and evaluating
+    /// its revision, which --eval also forces.
     Run {
         #[arg(value_name = "ATTR[@VERSION]")]
         spec: String,
@@ -69,14 +74,21 @@ enum Command {
         #[arg(last = true)]
         args: Vec<String>,
 
-        /// Print the nix command line instead of running it
+        /// Fetch and evaluate the revision instead of substituting the
+        /// indexed store path
+        #[arg(long)]
+        eval: bool,
+
+        /// Print the command line instead of running it
         #[arg(long)]
         dry_run: bool,
     },
 
     /// A shell with packages from the revisions that shipped them
     ///
-    /// A wrapper around `nix shell`. Composing across revisions is right for
+    /// A wrapper around `nix shell`, taking indexed store paths where the
+    /// index has them and evaluated revisions where it does not — the two mix
+    /// freely within one shell. Composing across revisions is right for
     /// standalone tools and wrong for a development environment — for that,
     /// `mvs solve` gives one coherent revision.
     Shell {
@@ -87,9 +99,64 @@ enum Command {
         #[arg(last = true)]
         args: Vec<String>,
 
+        /// Fetch and evaluate the revisions instead of substituting the
+        /// indexed store paths
+        #[arg(long)]
+        eval: bool,
+
         /// Print the nix command line instead of running it
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// Print the /nix/store path of a version
+    ///
+    /// The digest comes straight out of the index, so nothing is evaluated or
+    /// fetched: `nix-store --realise $(mvs path hello@2.12.2)` materialises
+    /// the path from the binary cache with zero evaluation. When several
+    /// versions match, the one current at the tip wins, then the newest.
+    /// Needs a database built with store-path data (--data-dir).
+    Path {
+        #[arg(value_name = "ATTR[@VERSION]")]
+        spec: String,
+    },
+
+    /// NAR, download and closure sizes of a version
+    ///
+    /// Also lists the sibling outputs of a multi-output package. Needs a
+    /// database built with store-path data.
+    Size {
+        #[arg(value_name = "ATTR[@VERSION]")]
+        spec: String,
+    },
+
+    /// Direct references of a version's store path
+    ///
+    /// Each reference is tied back to an indexed package where possible — by
+    /// digest when the exact path is some pair's, by store name when the same
+    /// package came out of another revision. Needs a database built with
+    /// store-path data.
+    Deps {
+        #[arg(value_name = "ATTR[@VERSION]")]
+        spec: String,
+    },
+
+    /// Indexed packages whose store paths reference this version
+    ///
+    /// The reverse of deps, matched by digest and by store name. Needs a
+    /// database built with store-path data.
+    Rdeps {
+        #[arg(value_name = "ATTR[@VERSION]")]
+        spec: String,
+    },
+
+    /// Which package a store path belongs to
+    ///
+    /// Accepts a full /nix/store path, a basename, or a bare 32-character
+    /// digest. Needs a database built with store-path data.
+    Identify {
+        #[arg(value_name = "STORE-PATH|DIGEST")]
+        target: String,
     },
 
     /// Per-package pins in multiverse.lock
@@ -191,6 +258,15 @@ fn execute(dry_run: bool) -> Execute {
     }
 }
 
+/// `--eval` as the enum the wrappers take, for the same reason.
+fn speed(eval: bool) -> Speed {
+    if eval {
+        Speed::Eval
+    } else {
+        Speed::Fast
+    }
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let index = Index::open(cli.db.as_deref())?;
@@ -215,13 +291,20 @@ fn run() -> Result<()> {
         Command::Run {
             spec,
             args,
+            eval,
             dry_run,
-        } => run::run(&index, spec, args, execute(*dry_run)),
+        } => run::run(&index, spec, args, execute(*dry_run), speed(*eval)),
         Command::Shell {
             specs,
             args,
+            eval,
             dry_run,
-        } => run::shell(&index, specs, args, execute(*dry_run)),
+        } => run::shell(&index, specs, args, execute(*dry_run), speed(*eval)),
+        Command::Path { spec } => store::path(&index, spec, format),
+        Command::Size { spec } => store::size(&index, spec, format),
+        Command::Deps { spec } => store::deps(&index, spec, format),
+        Command::Rdeps { spec } => store::rdeps(&index, spec, format),
+        Command::Identify { target } => store::identify(&index, target, format),
         Command::Lock(l) => {
             let path = lock::lock_path(cli.file.as_deref());
             match l {

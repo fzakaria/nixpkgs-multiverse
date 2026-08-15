@@ -151,3 +151,44 @@ pub fn plural(n: usize, singular: &str) -> String {
         format!("{n} {singular}s")
     }
 }
+
+/// Binary units for byte counts. Sizes here come from NARs and closures, which
+/// Nix itself reports in KiB/MiB/GiB.
+const BYTE_UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+const BYTES_PER_UNIT: f64 = 1024.0;
+
+/// A byte count for a human: "532 B", "48.2 KiB", "1.5 GiB".
+pub fn bytes(n: i64) -> String {
+    let mut value = n as f64;
+    for unit in BYTE_UNITS {
+        if value < BYTES_PER_UNIT {
+            // Whole bytes are exact and printed as such; anything scaled is an
+            // approximation and gets one decimal.
+            if unit == BYTE_UNITS[0] {
+                return format!("{n} {unit}");
+            }
+            return format!("{value:.1} {unit}");
+        }
+        value /= BYTES_PER_UNIT;
+    }
+    format!("{value:.1} {}", BYTE_UNITS[BYTE_UNITS.len() - 1])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The byte formatter: exact below 1 KiB, one decimal above, and each unit
+    /// boundary landing on the right unit.
+    #[test]
+    fn formats_bytes() {
+        assert_eq!(bytes(0), "0 B");
+        assert_eq!(bytes(532), "532 B");
+        assert_eq!(bytes(1023), "1023 B");
+        assert_eq!(bytes(1024), "1.0 KiB");
+        assert_eq!(bytes(49368), "48.2 KiB");
+        assert_eq!(bytes(50_000_000), "47.7 MiB");
+        assert_eq!(bytes(3_000_000_000), "2.8 GiB");
+        assert_eq!(bytes(2_000_000_000_000), "1.8 TiB");
+    }
+}

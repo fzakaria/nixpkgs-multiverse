@@ -1,0 +1,262 @@
+{
+ "baseUrl": "https://github.com/fzakaria/nixpkgs-multiverse/releases/download",
+ "files": {
+  "closures-2013.json.gz": {
+   "narHash": "sha256-zZJMHk8cB5jvCzQPydcL3HXgO/4fOcpwFmTCE4/7dGg=",
+   "tag": "data-20260814"
+  },
+  "closures-2015.json.gz": {
+   "narHash": "sha256-YsesMvLOSTtT9Fo5dSUWtRAprthFQbdT29YYvK/Hv9g=",
+   "tag": "data-20260814"
+  },
+  "closures-2016.json.gz": {
+   "narHash": "sha256-akkTFyBYiSiOb2csn842mBAbItjhMMvaB/7I3gCqP5U=",
+   "tag": "data-20260814"
+  },
+  "closures-2017.json.gz": {
+   "narHash": "sha256-lqTRdI4Lfx7rkRqYowAfQ9qJ53YjDi+sE7Rpfh+4t6Q=",
+   "tag": "data-20260814"
+  },
+  "closures-2018.json.gz": {
+   "narHash": "sha256-dmYhig/eU1kf9F1ZRVUK6l6FDQehYVEFpxwxq6wAhSI=",
+   "tag": "data-20260814"
+  },
+  "closures-2019.json.gz": {
+   "narHash": "sha256-GZkYyZYKbqmIg/K6haIydMguHsIzJXcaWQ143MRZDMk=",
+   "tag": "data-20260814"
+  },
+  "closures-2020.json.gz": {
+   "narHash": "sha256-cs6vJnaNuu9uAXA0W2PjNukgA7aPNktLWqHutzw1btQ=",
+   "tag": "data-20260814"
+  },
+  "closures-2021.json.gz": {
+   "narHash": "sha256-5fseIURg2y3yrd8yowQw5h0rPQfr28dewEB+GkV+2I0=",
+   "tag": "data-20260814"
+  },
+  "closures-2022.json.gz": {
+   "narHash": "sha256-VImGW9qrdayE9NnmnmmrTNOPF+3JtxLI2hiYZI/fJCM=",
+   "tag": "data-20260814"
+  },
+  "closures-2023.json.gz": {
+   "narHash": "sha256-7paLuo6aPOvcW8erFH7ybxcWS6SJABly+KIaHhWyPDM=",
+   "tag": "data-20260814"
+  },
+  "closures-2024.json.gz": {
+   "narHash": "sha256-W1EW7/wYf1713CCjPFC02DKoWDmwAQn21x5ecshZy7Q=",
+   "tag": "data-20260814"
+  },
+  "closures-2025.json.gz": {
+   "narHash": "sha256-YnVVrwUG0HaT3gtNjsKMG2qJSctxzm5oIgkIoLwnM2o=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-01.json.gz": {
+   "narHash": "sha256-c+ZcidBqpxtbaBdHpCok9xWzTup1Rk/NQaCZ4c1zhss=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-02.json.gz": {
+   "narHash": "sha256-cal4a3O9b9RYhB1Bp5/UlFs4FW6rnfPWEsJHDXTKbzM=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-03.json.gz": {
+   "narHash": "sha256-RRgxJMUALx70Ljoogur8KyyB//TY6VGiWswOKd4bVJU=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-04.json.gz": {
+   "narHash": "sha256-p9LNlt1cBGmIE1iNUMh9X4x0LxPntmOx/hN8yOkR6r8=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-05.json.gz": {
+   "narHash": "sha256-hiuVUh8hg2djg7zpVKXap5tX851GhPKZaBThKxRFVY4=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-06.json.gz": {
+   "narHash": "sha256-M+Z9VXaNlP4P2GrdVGrUDDkqYjyyOhCWURfiPSKeJKI=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-07.json.gz": {
+   "narHash": "sha256-rdVjTRHGtrT9Af2untFNX0+kQYvT5BYRmhoUM9zXpgI=",
+   "tag": "data-20260814"
+  },
+  "closures-2026-08.json.gz": {
+   "narHash": "sha256-dT5xv1frKaGNbU+qekAW1ojo1ZkCAVRmkJAWlVCYM6U=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2013.json.gz": {
+   "narHash": "sha256-Em7cJNSqkT9N6zCGhzmh6MgWvC1w8VN65SFwHSx2/sA=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2015.json.gz": {
+   "narHash": "sha256-gS09lsoz2tMs7XAm2Gnux3T+sGUnsx/Wkymi58mqbHY=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2016.json.gz": {
+   "narHash": "sha256-TLHIqGWpDQhpyHHD68YXODId8sgDZ7BEYA9Lq5BUbeM=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2017.json.gz": {
+   "narHash": "sha256-xBD9fTuEpE6iPxdgwYU6JBEssv0s8AdsWFQg/OjqnOk=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2018.json.gz": {
+   "narHash": "sha256-XHAxMpAW7LLoshROEbR37cEMIdTuIqydWREzQw8hcCY=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2019.json.gz": {
+   "narHash": "sha256-tR/gidTDx5K0E4ivE2p0xXXmgsD2QVaA+hScB+0JVM4=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2020.json.gz": {
+   "narHash": "sha256-4DcDn6eOnjc4AI6lz19ylR1kSLGshWFLYOmZNfgb+dA=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2021.json.gz": {
+   "narHash": "sha256-i9S+VgIe7gvvH9Ipf8UVqnPt8RQE0e1NtkyhKKJmG1g=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2022.json.gz": {
+   "narHash": "sha256-rbpVJXLVbxED2tWX5gXBVDRZhZvyVWI6NXjSEcjXzL8=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2023.json.gz": {
+   "narHash": "sha256-dyQnrZ5Eij8CwsZuDPKl3epW57+4O85aSruKQMLXJcU=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2024.json.gz": {
+   "narHash": "sha256-bYG9WURtWp3CRe9+3TwLUlfoAEqcQF1GdLG+QKXDaw8=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2025.json.gz": {
+   "narHash": "sha256-aGZQEnoYO8v4ywPcCGzJN0esEZgo3sW2HO3GKBkErgM=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-01.json.gz": {
+   "narHash": "sha256-JZx2n7I0dWuOLUP5KImdlNSvnCTuyaM348xH81tUSs4=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-02.json.gz": {
+   "narHash": "sha256-6p8DbDO1Gi6uMV66XCCHBsO3byO6J21XgCjXEoX2KGk=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-03.json.gz": {
+   "narHash": "sha256-4+ud7MqCRnR8fs+x+gpzxXPvIzoWz9SwKcqNKhLAw/8=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-04.json.gz": {
+   "narHash": "sha256-Wu3g5Qh/pAO2h0TOx0CqSVjeODXucYvYZBcJbUndYSs=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-05.json.gz": {
+   "narHash": "sha256-j+mLiqAD6dG+afNgWglkRHnNPM4bCbwmWSWeZYIefqE=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-06.json.gz": {
+   "narHash": "sha256-Hf7lwd4NFmQbAKBLWWaWdX9RhasKZH4zmp2cEDkCbjY=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-07.json.gz": {
+   "narHash": "sha256-wDW01gKI5Epw6V2N9lWPLp7/G6CNp0tw73+t5ExARsU=",
+   "tag": "data-20260814"
+  },
+  "info-indexed-2026-08.json.gz": {
+   "narHash": "sha256-SSwaUtVva6r1GdOli8AVDDnVUvLjzZe//GVQk0pIU40=",
+   "tag": "data-20260814"
+  },
+  "outpaths.json": {
+   "narHash": "sha256-iWfbXUjV8EarVXq7m0EgTT+P/DB2FRKQz5bhuOLPGe0=",
+   "tag": "data-20260814"
+  },
+  "outs-indexed.json.gz": {
+   "narHash": "sha256-L2vVG6fu845/q7SBoSevgdxlDzYV4e0gal/knOmx+ss=",
+   "tag": "data-20260814"
+  },
+  "outs.json": {
+   "narHash": "sha256-tdw4VlCyCAlJpa/5chg9Ryv0eoh5/buOtKzZWCcxgUc=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2013.json.gz": {
+   "narHash": "sha256-GOOcAJwxRVfbQyAPUMvOtrEEWFNKJfu0WATunEd0voc=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2015.json.gz": {
+   "narHash": "sha256-vgf+IcrHoWH3Lklt0fiHVeBw582H9aJpDxd83zHzFLA=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2016.json.gz": {
+   "narHash": "sha256-G8eobDetUATaXCfDBjWaskNqiWKKFqnl6FAmCgptFJU=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2017.json.gz": {
+   "narHash": "sha256-t9kgVYRH/Xl5uOiGnnIRXN4YlX5IksA26LwX51Ej43g=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2018.json.gz": {
+   "narHash": "sha256-ODQywtbR6skFX2g21Lb3EZVGC18Ky5yg0zedZE5fKO0=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2019.json.gz": {
+   "narHash": "sha256-4GStSTmjIjOz6YjSj24eikMTRkWzA3+3LYsjMxAl80A=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2020.json.gz": {
+   "narHash": "sha256-yA7aWtLpD3wTYzugpoV75/6jRd9He9Ww7MrtrmKYZHc=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2021.json.gz": {
+   "narHash": "sha256-H2oZ0IaEbUqpcpUNL6NhqAjv9tAKqfiu3AmAPnm8LME=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2022.json.gz": {
+   "narHash": "sha256-m0T6miL+bHxJ4F5qvCfRhxqloxjprzl2+CK9p6tgnuI=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2023.json.gz": {
+   "narHash": "sha256-KsUR4UakjHPmxXa1ll14zSG+Asg6yGMg7qNY52r4Qe8=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2024.json.gz": {
+   "narHash": "sha256-u9vPjQY9KCFjgLltMJnrjDjosWk9Jj19B5z1CZqhZRs=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2025.json.gz": {
+   "narHash": "sha256-NArh7NKrSEY4uRkWUtoxmjVV+FfolEqXozG6li0OT7U=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-01.json.gz": {
+   "narHash": "sha256-NIWpIzPzXvxj4YNA3npSV7HJvbGFU2YmXlwtk2UOjws=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-02.json.gz": {
+   "narHash": "sha256-tOgnAwwnzwUEM1PMj5E3Nj4LS86DG6EzGhj7tQrmktw=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-03.json.gz": {
+   "narHash": "sha256-BeOgkERf1rMIeplVOQyGf8+C4PBCrEbt18CgAnCDi+g=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-04.json.gz": {
+   "narHash": "sha256-mI6JTlJ1widLiAZn56lRULGUef37JaxqyYKwcrYjNbY=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-05.json.gz": {
+   "narHash": "sha256-hrpfMoDFshmMVHH7X2Qy3YvXOh9r2rOiBog0vaGYVBw=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-06.json.gz": {
+   "narHash": "sha256-wq4EumqlSsa4VjCVurFcnTz/JbR2D11/AHquCI73lYw=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-07.json.gz": {
+   "narHash": "sha256-0qp0gCd8ZLfyYRVYEDU39cnu6VL3aR1WXZ0pYY+rJas=",
+   "tag": "data-20260814"
+  },
+  "refs-indexed-2026-08.json.gz": {
+   "narHash": "sha256-B5iLri1iDKH4Gay/M10eA7YwEIkIGO0aTXDn6dSl/qQ=",
+   "tag": "data-20260814"
+  },
+  "tip-outpaths.json": {
+   "narHash": "sha256-NMAGk5sUq2RZ9gKH48pKYGwQuby94KUfj3XK9wuGNR4=",
+   "tag": "data-20260814"
+  }
+ },
+ "version": 1
+}

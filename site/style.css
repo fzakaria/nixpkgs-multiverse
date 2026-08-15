@@ -123,6 +123,8 @@ code {
   padding: 0.1rem 0.3rem;
 }
 
+/* ---------- shared UI (js/ui.js): commands and expandable rows ---------- */
+
 /* A copyable command: one block, the command never wraps, the icon rides
      on the right edge. */
 .cmd {
@@ -168,7 +170,7 @@ code {
  * channel-build links, everything visible while collapsed must live inside
  * <summary>, and an interactive element nested in a <summary> is not reliably
  * keyboard-reachable — Chromium reported 348 of them. The disclosure is a real
- * <button> and the links are its siblings; see the Row component in app.js.
+ * <button> and the links are its siblings; see the Row component in js/ui.js.
  *
  * The button takes the first grid column rather than being absolutely
  * positioned, so the marker, the header cells and the row cells all share one
@@ -247,9 +249,17 @@ code {
   margin-right: 1rem;
 }
 
+/* ---------- the view tables (js/views/*.js): column track lists ---------- */
+
 /* First track is the disclosure button. */
 .cols-ver {
-  grid-template-columns: 1.4rem 9rem 17rem 1fr;
+  grid-template-columns: 1.4rem 9rem 15rem 5.5rem 1fr;
+}
+/* The size cell: numbers compare down the column. */
+.rowsize {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 .cols-rev {
   grid-template-columns: 1.4rem 7rem 9rem 7rem 1fr;
@@ -257,6 +267,8 @@ code {
 .cols-rel {
   grid-template-columns: 1.4rem 5rem 7rem 9rem 1fr;
 }
+
+/* ---------- packages search and identify (js/views/packages.js) ---------- */
 
 /* A search hit is an anchor, so that a crawler following the search page has
    a way into the 31,798 package pages and a reader can open one in a new tab.
@@ -272,6 +284,8 @@ code {
 .pkg:hover {
   color: var(--accent);
 }
+/* ---------- revision pins (js/views/revisions.js) ---------- */
+
 /* Three columns where there is room for three. The 10rem minimum is set by the
    narrowest useful column rather than by the widest attribute name: at 14rem a
    phone could only ever fit one column, and a single column of short names
@@ -285,6 +299,7 @@ code {
   break-inside: avoid;
 }
 button.more {
+  display: block;
   font:
     13px system-ui,
     sans-serif;
@@ -320,7 +335,8 @@ footer {
   padding: 0;
 }
 
-/* ---------- charts ----------
+/* ---------- charts (js/charts.js plumbing, js/views/stats.js and the
+ * package charts in js/views/package.js) ----------
  *
  * Colors are roles, not hex, so the dark block below swaps them in one place.
  * The two series hues are the validated diverging pair (blue ↔ red): they clear
@@ -370,8 +386,7 @@ footer {
   width: 100%;
   overflow: visible;
 }
-.chart .grid line,
-.chart .axis line {
+.chart .grid line {
   stroke: var(--line);
   stroke-width: 1;
 }
@@ -429,6 +444,13 @@ footer {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+/* A legend term carrying a definition in its title. The dotted underline is
+   the only affordance a title tooltip gets, so it has to be there. */
+.legend .whatis {
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
 }
 .legend i {
   width: 10px;
@@ -506,7 +528,7 @@ footer {
   color: var(--muted);
 }
 
-/* ---------- per-package timeline ----------
+/* ---------- per-package timeline (Timeline in js/views/package.js) ----------
  *
  * One row per version, bars where that version was actually the one nixpkgs
  * shipped. A version with a gap draws as two bars, which is the point.
@@ -533,7 +555,147 @@ footer {
   fill: var(--code-bg);
 }
 
-/* Delta text in the revisions table. The +/− sign carries the meaning and the
+/* ---------- store metadata (js/views/package-store.js): badges, dep chips,
+   graph ---------- */
+
+/* Liveness. The symbol (●/○) carries the meaning; color is the second
+   channel. Same green/red discipline as the delta pair below. */
+.cachebadge {
+  font-size: 13px;
+  margin: -0.3rem 0 0.6rem;
+}
+.badge-ok {
+  color: var(--delta-add);
+}
+.badge-dead {
+  color: var(--delta-del);
+}
+
+/* A dependency chip: one path, one small box. Link chips take the accent on
+   hover like everything else. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0 0.5rem;
+  font-size: 12px;
+}
+.chip {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  background: var(--code-bg);
+  color: var(--fg);
+  text-decoration: none;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Dep changes between versions: reuses the delta colors, wraps as chips do. */
+.depdiff {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.7rem;
+  margin: 0.2rem 0 0.5rem;
+  font-size: 12.5px;
+}
+
+/* The identified store path card. */
+.identify {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  margin: 0.5rem 0;
+}
+
+/* The radial dependency graph. The svg is a map viewport: zooming rewrites
+   its viewBox, so content must CLIP at the edge — overflow:visible let a
+   zoomed graph spill across the whole page. The border makes the viewport
+   readable as a thing with an inside. */
+.graphbox {
+  margin: 0.6rem 0;
+}
+.graphbox svg {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.g-edge {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.g-edge2 {
+  opacity: 0.6;
+}
+.g-node {
+  fill: var(--muted);
+}
+.g-node-link {
+  fill: var(--chart-series);
+  cursor: pointer;
+}
+.g-center {
+  fill: var(--chart-removed);
+}
+.g-label {
+  fill: var(--fg);
+  font:
+    11px ui-monospace,
+    monospace;
+}
+.g-label2 {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.g-label-link {
+  cursor: pointer;
+}
+.g-label-link:hover {
+  fill: var(--accent);
+}
+.g-center-label {
+  font-weight: 600;
+}
+
+/* The closure series in the weight chart, on the diverging partner hue. */
+.chart .series-closure {
+  stroke: var(--chart-removed);
+}
+
+/* The universe canvas and its time slider (js/views/universe.js). */
+.universe {
+  margin: 0.8rem 0 1.4rem;
+  position: relative;
+}
+.universe canvas {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.unislider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  font-size: 13px;
+}
+.unislider input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* Delta text in the revisions table (js/views/revisions.js), reused by the
+   dep diff in js/views/package-store.js. The +/− sign carries the meaning and the
    color is the secondary channel, which is what keeps this readable under
    red-green CVD — the most common kind, and the reason a bare red/green pair
    is never allowed to carry meaning alone.
@@ -561,7 +723,7 @@ footer {
   color: var(--delta-del);
 }
 
-/* A version's runs, inside its expanded row. */
+/* A version's runs, inside its expanded row (js/views/package.js). */
 .runs {
   font-size: 13px;
   margin: 0.2rem 0 0.4rem;
@@ -570,7 +732,8 @@ footer {
   padding: 0.1rem 0;
 }
 
-/* Expand/collapse every row on the page, and the heading line that carries it.
+/* Expand/collapse every row on the page (useBulk in js/ui.js), and the
+ * heading line that carries it.
  *
  * The button used to be float:right, which pins it beside the FIRST line of the
  * heading — so once the heading wrapped, which it does on any phone, the button
@@ -656,5 +819,39 @@ footer {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     overflow-x: visible;
+  }
+
+  /* Stats and chart tables on narrow screens: drop rigid <table> grid
+     and collapse into flexible rows matching the rest of the site. */
+  .chart .tableview thead {
+    display: none;
+  }
+  .chart .tableview tbody {
+    display: block;
+  }
+  .chart .tableview tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--line);
+    gap: 0.1rem 0.6rem;
+  }
+  .chart .tableview th,
+  .chart .tableview td {
+    display: block;
+    padding: 0;
+    border: none;
+    text-align: left;
+  }
+  .chart .tableview td:first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .chart .tableview td:last-child {
+    margin-left: auto;
+    text-align: right;
+    font-weight: 500;
   }
 }

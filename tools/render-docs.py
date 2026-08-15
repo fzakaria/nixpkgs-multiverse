@@ -302,13 +302,13 @@ def provenance(commit, store_path):
     neither line.
     """
     out = []
-    if not commit.startswith("__"):
+    if commit:
         out.append(
             f' ·\n      <span>built from\n'
             f'        <a href="{REPO}/commit/{commit}">'
             f"<code>{commit[:REV_ABBREV]}</code></a></span>"
         )
-    if not store_path.startswith("__"):
+    if store_path:
         out.append(
             f'\n      <div id="store"><code>{html.escape(store_path)}</code></div>'
         )

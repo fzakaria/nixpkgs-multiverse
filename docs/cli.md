@@ -213,23 +213,99 @@ use it in your system configuration.
 
 ## Running a version
 
-Thin wrappers over `nix run` and `nix shell` that take `attr@version` and
-resolve it through the index. `--dry-run` prints the command line instead,
-which is how to see what a constraint resolved to before fetching it.
+`mvs run` and `mvs shell` take `attr@version` and resolve it through the
+index. By default they take the **fast road**: the
+[store-path index](./store-paths.md) knows which `/nix/store` path the version
+built to, so the path is substituted straight from cache.nixos.org and run. No
+nixpkgs is fetched and nothing is evaluated.
 
 ```console
-$ mvs run ripgrep@13.0.0 -- --version
-ripgrep 13.0.0 from 2023-11-29-7c6e3666e204
-ripgrep 13.0.0
+$ time mvs run hello@2.12.2
+hello 2.12.2 from the store-path index
+Hello, world!
+real  0m0.075s
 
-$ mvs shell ripgrep@13.0.0 fd@8.7.0 --dry-run
-nix shell github:NixOS/nixpkgs/7c6e3666e204…#ripgrep github:NixOS/nixpkgs/7c9cc5a6e5d3…#fd
+$ mvs run ripgrep -- --version
+ripgrep 15.2.0 (current) from the store-path index
+ripgrep 15.2.0
 ```
 
-`mvs shell` composes across revisions, which is right for standalone binaries
-and wrong for a development environment — for that, `solve` gives one coherent
-revision.
-  
+The program to execute is recovered from the realised path: the attribute
+name, then the derivation's pname, then a sole entry in `bin/` — which is why
+`ripgrep` runs `rg` without the index carrying a `mainProgram`. A package with
+several binaries and no obvious match names them rather than guessing.
+
+A version the store-path index never matched falls back to the **eval road**,
+which `--eval` also forces: resolve the commit that shipped the version and
+hand it to `nix run`, fetching ~378 MB of that revision.
+
+```console
+$ mvs run ripgrep@13.0.0 --eval -- --version
+ripgrep 13.0.0 from 2023-11-29-7c6e3666e204
+ripgrep 13.0.0
+```
+
+`--dry-run` prints what would happen instead of doing it, which is how to see
+which road a spec takes and what it resolved to:
+
+```console
+$ mvs run hello@2.12.2 --dry-run
+nix-store --realise /nix/store/8qi947kixhz1nw83dkwxm6d0wndprqkj-hello-2.12.2
+
+$ mvs run hello@2.12.2 --eval --dry-run
+nix run github:NixOS/nixpkgs/b40629efe5d6…#hello
+```
+
+`mvs shell` mixes the two per package — an indexed one contributes a store
+path, an unindexed one a revision — and composes across revisions, which is
+right for standalone binaries and wrong for a development environment. For
+that, `solve` gives one coherent revision.
+
+## Store paths
+
+With a database built from the store-path artifacts, five subcommands answer
+questions about what a version actually built to. All of them are offline and
+evaluate nothing.
+
+```console
+$ mvs path hello@2.12.2
+hello 2.12.2
+/nix/store/8qi947kixhz1nw83dkwxm6d0wndprqkj-hello-2.12.2
+
+$ mvs size python3@3.8.9
+python3 3.8.9 · /nix/store/6cfajs6lsy9b4wxp3jvyyl1g5x2pjmpr-python3-3.8.9
+  nar (unpacked)  50.1 MiB
+  download        10.6 MiB
+  closure         93.8 MiB · 16 paths
+  cache           live
+
+$ mvs deps ripgrep
+ripgrep 15.2.0 · 3 direct references
+REFERENCE                                        PACKAGE                            VIA
+0d8g8n0a11v6f5m2h416ajyxmnkwc3md-glibc-2.42-67   glibc@2.42, iconv@2.42, libc@2.42  digest
+dsn500c5j62qz9f49mi3nhx74jbkf6xq-pcre2-10.47     pcre2@10.47                        digest
+r48746qznwqxxl9qzd8f08ny8mg1dg2y-gcc-15.3.0-lib  (not indexed)
+
+$ mvs rdeps pcre2
+pcre2 10.47 · referenced by 255 indexed packages
+…
+
+$ mvs identify /nix/store/8qi947kixhz1nw83dkwxm6d0wndprqkj-hello-2.12.2
+/nix/store/8qi947kixhz1nw83dkwxm6d0wndprqkj-hello-2.12.2
+  package  hello 2.12.2
+```
+
+`identify` also takes a bare basename or a 32-character digest. `path` prints
+the path on stdout and its resolution note on stderr, so it composes:
+
+```console
+$ nix-store --realise $(mvs path hello@2.12.2)
+```
+
+A database built without the store-path artifacts still answers everything in
+the sections above; these five decline with a message naming the flag that
+would have included the data.
+
 ## The database
 
 The underlying database is SQLite and it can be queried directly.
@@ -239,4 +315,15 @@ as the artifact for anyone who wants to run SQL over 13 years of nixpkgs.
 $ nix build github:fzakaria/nixpkgs-multiverse#index-db
 $ sqlite3 result 'SELECT count(*) FROM runs'
 331307
+```
+
+It also carries the store-path data behind the subcommands above: store paths
+interned in `store_paths`, their names in `store_names`, and every direct
+reference as an integer edge in `path_refs` — 873,256 paths and 2,936,375
+edges, which is the dependency graph of thirteen years of nixpkgs in a file
+you can join against.
+
+```console
+$ sqlite3 result 'SELECT count(*) FROM path_refs'
+2936375
 ```

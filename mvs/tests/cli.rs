@@ -186,8 +186,9 @@ fn locks_pins() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// `mvs run` resolves to the commit that shipped the version and hands the rest
-/// to nix. Checked through --dry-run, so the test does not fetch 378 MB.
+/// `--eval` takes the evaluation road: `mvs run` resolves to the commit that
+/// shipped the version and hands the rest to nix. Checked through --dry-run,
+/// so the test does not fetch 378 MB.
 #[test]
 fn resolves_what_it_would_run() {
     let Some(mvs) = mvs() else { return };
@@ -195,6 +196,7 @@ fn resolves_what_it_would_run() {
     let line = mvs.stdout(&[
         "run",
         &format!("ripgrep@{OLD_RIPGREP}"),
+        "--eval",
         "--dry-run",
         "--",
         "--version",
@@ -210,8 +212,37 @@ fn resolves_what_it_would_run() {
         "shell",
         &format!("ripgrep@{OLD_RIPGREP}"),
         "python3@3.8",
+        "--eval",
         "--dry-run",
     ]);
     assert!(line.contains(OLD_RIPGREP_REV), "{line}");
     assert_eq!(line.matches("github:NixOS/nixpkgs/").count(), 2, "{line}");
+}
+
+/// Without `--eval`, the same commands take the store-path road: one
+/// substitution of an indexed path, no revision named at all. Skipped on a
+/// database built without store data, where there is no fast road to take —
+/// which `mvs path` failing is exactly the signal for.
+#[test]
+fn prefers_the_store_path_road() {
+    let Some(mvs) = mvs() else { return };
+
+    let spec = format!("ripgrep@{OLD_RIPGREP}");
+    if !mvs.run(&["path", &spec]).status.success() {
+        eprintln!("skipping: database has no store-path data");
+        return;
+    }
+
+    let line = mvs.stdout(&["run", &spec, "--dry-run", "--", "--version"]);
+    assert!(
+        line.starts_with("nix-store --realise /nix/store/"),
+        "{line}"
+    );
+    assert!(line.contains("ripgrep-"), "{line}");
+    assert!(!line.contains("github:NixOS/nixpkgs/"), "{line}");
+
+    // A shell mixes roads per package, so an indexed one contributes a store
+    // path where an unindexed one would contribute a revision.
+    let line = mvs.stdout(&["shell", &spec, "--dry-run"]);
+    assert!(line.contains("/nix/store/"), "{line}");
 }

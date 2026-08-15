@@ -6,6 +6,12 @@
 # offsets past the index's revisionCount, and neither needs a nixpkgs clone:
 # revisions are resolved through the GitHub API and materialised with
 # `nix flake prefetch`. A run that finds nothing new costs about a minute.
+#
+# When the channel moved, the run also advances the store-path artifacts:
+# state is restored from the rolling release, update-outpaths runs its
+# incremental match-and-crawl, the rolling assets are re-published, and once
+# a day the changed artifacts are copied to a dated release tag with
+# data-pins.json repointed at them. No bump, no cut, no pin churn.
 name: update-index
 
 on:
@@ -29,7 +35,7 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -94,9 +100,71 @@ jobs:
       - name: Refresh the README status block
         run: nix run .#update-readme-status
 
+      # The rolling tip file carries the revisionCount it was built against;
+      # when it matches the index just updated above, the channel has not
+      # moved since the last data run and every data step below is skipped.
+      # A missing rolling asset reads as stale, which is what bootstraps.
+      - name: Check whether the store-path data is stale
+        id: data
+        run: |
+          current=$(python3 -c 'import json; print(json.load(open("index/versions.json"))["revisionCount"])')
+          rolling=$(curl -fsSL https://github.com/fzakaria/nixpkgs-multiverse/releases/download/data-rolling/tip-outpaths.json \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["revisionCount"])' || echo 0)
+          echo "index covers $current revisions; rolling data covers $rolling"
+          if [ "$current" != "$rolling" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Previous artifacts and crawl graph from the rolling release, pinned
+      # graph shards as the consolidation fallback — a fresh runner starts
+      # warm. See tools/restore-outpaths-state.sh.
+      - name: Restore the outpaths state
+        if: steps.data.outputs.stale == 'true'
+        run: bash tools/restore-outpaths-state.sh
+
+      # Fetch the new bump's listing, close versions, resolve digests, crawl
+      # the newly matched digests and their frontier, consolidate. Every step
+      # is incremental; ~3-6 minutes on a typical bump.
+      - name: Update the store-path artifacts
+        if: steps.data.outputs.stale == 'true'
+        run: nix run .#update-outpaths
+
+      - name: Publish the rolling state
+        if: steps.data.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload data-rolling --clobber \
+            index/.outpaths/data/outpaths.json \
+            index/.outpaths/data/tip-outpaths.json \
+            index/.outpaths/data/misses.json \
+            index/.outpaths/graph.jsonl.gz
+
+      # Piggybacked on the first data run of each UTC day: shard by closing
+      # period, upload whatever differs from its pin to a dated tag, and
+      # repoint data-pins.json (committed below). Later bumps the same day
+      # ride the rolling release until tomorrow's cut.
+      - name: Cut the dated data release
+        if: steps.data.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="data-$(date -u +%Y%m%d)"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG already cut; next cut tomorrow"
+            exit 0
+          fi
+          python3 tools/shard-data.py \
+            --revisions revisions.json --versions index/versions.json \
+            --outpaths index/.outpaths/data/outpaths.json index/.outpaths/data/tip-outpaths.json \
+            --data-dir index/.outpaths/data --out-dir index/.outpaths/data/shards
+          bash tools/cut-data-release.sh "$TAG"
+
       - name: Commit
         run: |
-          if git diff --quiet -- revisions.json releases.json index README.md; then
+          if git diff --quiet -- revisions.json releases.json index README.md data-pins.json; then
             echo "nothing new"
             exit 0
           fi
@@ -107,6 +175,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add revisions.json releases.json index README.md
+          git add revisions.json releases.json index README.md data-pins.json
           git commit -m "Index nixpkgs through ${tip}"
           git push
