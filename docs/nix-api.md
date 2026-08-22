@@ -578,3 +578,41 @@ fallback is those same derivations. What no `config` can give `mv.fast.*` is a
 store path to substitute: Hydra never built one, so an unfree package has the
 eval path or nothing. See
 [attributes with no fast path](#attributes-with-no-fast-path).
+
+## Mirrors
+
+The predefined `multiverse.<system>` flake output uses the default upstream
+locations. To fetch nixpkgs sources and fast-path data through mirrors, create a
+custom instance with `lib.mkMultiverse` (or import `multiverse.nix` directly):
+
+```nix
+mv = multiverse.lib.mkMultiverse {
+  system = "x86_64-linux";
+
+  fetchTreeArgs = rev: {
+    type = "tarball";
+    url = "https://artifactory.example.org/artifactory/nixpkgs/archive/${rev}.tar.gz";
+  };
+
+  dataBaseUrl =
+    "https://mirror.example/nixpkgs-multiverse/releases/download";
+};
+```
+
+`fetchTreeArgs` receives the full revision and returns the base input passed to
+`builtins.fetchTree`. Multiverse adds `rev` and, for indexed revisions, the
+recorded `narHash`, overriding attributes of the same name returned by the
+function. The Artifactory example therefore remains content-verified for
+indexed revisions.
+
+Release tips have no recorded `narHash`. A custom source used for release
+selectors must consequently be accepted as locked by Nix, or return its own
+`narHash`; otherwise pure evaluation rejects the fetch. The default GitHub
+source is locked by its full commit hash.
+
+`dataBaseUrl` replaces only the URL prefix used for pinned artifacts. A null
+value uses `data-pins.json.baseUrl`; the file names, release tags, hashes and
+supported systems still come from `data-pins.json`. A mirror must therefore
+preserve the `<baseUrl>/<tag>/<filename>` layout and serve identical bytes,
+which remain verified by `narHash`. When `dataOverride` is set, local files are
+used instead and `dataBaseUrl` is ignored.
