@@ -3,150 +3,175 @@
   "build": 35728,
   "date": "2014-06-09",
   "name": "nixos-13.10.35728.91e952a",
+  "narHash": "sha256-p115V3t41tNmkBuFQFYTjiOe+6pLVaa2MM5wnCXtEkU=",
   "rev": "91e952ab1e6e3d249ff201f915b38f7ab34e8c3f"
  },
  "14.04": {
   "build": 630,
   "date": "2015-02-16",
   "name": "nixos-14.04.630.8a3eea0",
+  "narHash": "sha256-fWJpUUREeiuymBN5+304Muh87nOOXOC6GMkEPI8NWsQ=",
   "rev": "8a3eea054838b55aca962c3fbde9c83c102b8bf2"
  },
  "14.12": {
   "build": 885,
   "date": "2015-09-27",
   "name": "nixos-14.12.885.b373bf9",
+  "narHash": "sha256-QsrS6BEjO8ccwlmL1b7/5iPaemuM/Ibj9WWu7bKe98o=",
   "rev": "b373bf9c7d54827504781009efbb4bee15856d86"
  },
  "15.09": {
   "build": 1262,
   "date": "2016-12-09",
   "name": "nixos-15.09.1262.3727911",
+  "narHash": "sha256-6YsLYDFRodegNKnP6utINbAvjI65sSS6BUzDMiFAOCI=",
   "rev": "3727911b46daf32d4ea8f2a2b1072580227e72fe"
  },
  "16.03": {
   "build": 1349,
-  "date": "2017-03-04",
+  "date": "2017-03-03",
   "name": "nixos-16.03.1349.dda40aa8d1",
+  "narHash": "sha256-j0cdOBBKgeAgvSxpoc8jSysIciGXRs0X3SJoTjSTdGw=",
   "rev": "dda40aa8d18c836cecf64742ace96e14662afdc6"
  },
  "16.09": {
   "build": 1943,
   "date": "2017-05-23",
   "name": "nixos-16.09.1943.25f4906da6",
+  "narHash": "sha256-UXQ7elaJw7UuB0nk97Q5wWaeCIiB9NGKqq2Frx0MQF0=",
   "rev": "25f4906da6387e132823417bc54ea86040fb9bd5"
  },
  "17.03": {
   "build": 1949,
   "date": "2018-01-06",
   "name": "nixos-17.03.1949.78e9665b48f",
+  "narHash": "sha256-iPuue83Si9WA3yxYYjRGy4vkWMUhoW4zTT5vGZUExSU=",
   "rev": "78e9665b48ff45d3e29f45b3ebeb6fc6c6e19922"
  },
  "17.09": {
   "build": 3269,
   "date": "2018-09-14",
   "name": "nixos-17.09.3269.14f9ee66e63",
+  "narHash": "sha256-YVNTE4b+lMgLt5OjlW//09UIvWE8DxqSFNNhFla1x/I=",
   "rev": "14f9ee66e63077539252f8b4550049381a082518"
  },
  "18.03": {
   "build": 133402,
   "date": "2019-02-15",
   "name": "nixos-18.03.133402.cb0e20d6db9",
+  "narHash": "sha256-4s13waLJfYR5RqVWFiBoTy9ezLDzXyNFGhBe0NWaNzU=",
   "rev": "cb0e20d6db96fe09a501076c7a2c265359982814"
  },
  "18.09": {
   "build": 2574,
   "date": "2019-05-19",
   "name": "nixos-18.09.2574.a7e559a5504",
+  "narHash": "sha256-5v6XuO9dOVpB3ZGNyDvLqOvCnzlyyvscTYbNiQouSZo=",
   "rev": "a7e559a5504572008567383c3dc8e142fa7a8633"
  },
  "19.03": {
   "build": 173691,
   "date": "2020-02-11",
   "name": "nixos-19.03.173691.34c7eb7545d",
+  "narHash": "sha256-i1XCn9rKuLjvCdu2UeXKzGLF6IuQePQKFt4hEKRU5oc=",
   "rev": "34c7eb7545d155cc5b6f499b23a7cb1c96ab4d59"
  },
  "19.09": {
   "build": 2522,
   "date": "2020-09-24",
   "name": "nixos-19.09.2522.75f4ba05c63",
+  "narHash": "sha256-GUKHrnng33luc6mUT3rDnZ3Hm+4MMEJpEchRIAQx7JQ=",
   "rev": "75f4ba05c63be3f147bcc2f7bd4ba1f029cedcb1"
  },
  "20.03": {
   "build": 3330,
   "date": "2021-05-03",
   "name": "nixos-20.03.3330.1db42b7fe38",
+  "narHash": "sha256-8LEHoYSJiL901bTMVatq+rf8y7QtWuZhwwpKE2fyaRY=",
   "rev": "1db42b7fe3878f3f5f7a4f2dc210772fd080e205"
  },
  "20.09": {
   "build": 4407,
   "date": "2021-10-27",
   "name": "nixos-20.09.4407.1c1f5649bb9",
+  "narHash": "sha256-tAMJnUwfaDEB2aa31jGcu7R7bzGELM9noc91L2PbVjg=",
   "rev": "1c1f5649bb9c1b0d98637c8c365228f57126f361"
  },
  "21.05": {
   "build": 4737,
   "date": "2022-08-07",
   "name": "nixos-21.05.4737.022caabb5f2",
+  "narHash": "sha256-lkA5X3VNMKirvA+SUzvEhfA7XquWLci+CGi505YFAIs=",
   "rev": "022caabb5f2265ad4006c1fa5b1ebe69fb0c3faf"
  },
  "21.11": {
   "build": 337975,
   "date": "2022-08-02",
   "name": "nixos-21.11.337975.eabc3821918",
+  "narHash": "sha256-hekabNdTdgR/iLsgce5TGWmfIDZ86qjPhxDg/8TlzhE=",
   "rev": "eabc38219184cc3e04a974fe31857d8e0eac098d"
  },
  "22.05": {
   "build": 4694,
   "date": "2023-05-31",
   "name": "nixos-22.05.4694.380be19fbd2d",
+  "narHash": "sha256-Zffu01pONhs/pqH07cjlF10NnMDLok8ix5Uk4rhOnZQ=",
   "rev": "380be19fbd2d9079f677978361792cb25e8a3635"
  },
  "22.11": {
   "build": 4773,
   "date": "2023-07-03",
   "name": "nixos-22.11.4773.ea4c80b39be4",
+  "narHash": "sha256-lHrKvEkCPTUO+7tPfjIcb7Trk6k31rz18vkyqmkeJfY=",
   "rev": "ea4c80b39be4c09702b0cb3b42eab59e2ba4f24b"
  },
  "23.05": {
   "build": 5533,
   "date": "2024-01-03",
   "name": "nixos-23.05.5533.70bdadeb94ff",
+  "narHash": "sha256-LWvKHp7kGxk/GEtlrGYV68qIvPHkU9iToomNFGagixU=",
   "rev": "70bdadeb94ffc8806c0570eb5c2695ad29f0e421"
  },
  "23.11": {
   "build": 7870,
   "date": "2024-07-09",
   "name": "nixos-23.11.7870.205fd4226592",
+  "narHash": "sha256-zwVvxrdIzralnSbcpghA92tWu2DV2lwv89xZc8MTrbg=",
   "rev": "205fd4226592cc83fd4c0885a3e4c9c400efabb5"
  },
  "24.05": {
   "build": 7376,
   "date": "2024-12-30",
   "name": "nixos-24.05.7376.b134951a4c9f",
+  "narHash": "sha256-OnSAY7XDSx7CtDoqNh8jwVwh4xNL/2HaJxGjryLWzX8=",
   "rev": "b134951a4c9f3c995fd7be05f3243f8ecd65d798"
  },
  "24.11": {
   "build": 719113,
   "date": "2025-06-30",
   "name": "nixos-24.11.719113.50ab793786d9",
+  "narHash": "sha256-/bVBlRpECLVzjV19t5KMdMFWSwKLtb5RyXdjz3LJT+g=",
   "rev": "50ab793786d9de88ee30ec4e4c24fb4236fc2674"
  },
  "25.05": {
   "build": 813814,
   "date": "2026-01-02",
   "name": "nixos-25.05.813814.ac62194c3917",
+  "narHash": "sha256-16KkgfdYqjaeRGBaYsNrhPRRENs0qzkQVUooNHtoy2w=",
   "rev": "ac62194c3917d5f474c1a844b6fd6da2db95077d"
  },
  "25.11": {
   "build": 12484,
   "date": "2026-06-30",
   "name": "nixos-25.11.12484.b6018f87da91",
+  "narHash": "sha256-twXPFqFsrrY5r28Zh7Homgcp2gUMBgQ6WDS98Q/3xFI=",
   "rev": "b6018f87da91d19d0ab4cf979885689b469cdd41"
  },
  "26.05": {
   "build": 8111,
   "date": "2026-08-20",
   "name": "nixos-26.05.8111.5880666fd9eb",
+  "narHash": "sha256-OURZPknrTjQrlNyxPdqzyqmU/81Wes1CUP/Ft1Rv/YI=",
   "rev": "5880666fd9eb563038431edb35c2d0aa595884e6"
  }
 }

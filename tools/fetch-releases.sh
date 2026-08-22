@@ -27,17 +27,24 @@
 #
 # The bump with the highest <build> is the channel tip. That ordering must be
 # numeric: as text, nixos-26.05.590 sorts after nixos-26.05.1183.
+#
+# Every tip carries its narHash, which multiverse.nix checks the fetched tree
+# against exactly as it does an indexed revision. A hash costs one tree, so it
+# is computed only for a tip that actually moved: an unchanged channel carries
+# its recorded hash forward untouched, and the ~20 releases that are past end of
+# life never move again. Point NIXPKGS at a clone to pay it with `git archive`
+# rather than a download.
 set -euo pipefail
 
 # releases.json lives in the caller's checkout, which under `nix run` is not
 # where this script lives; the flake wrapper passes it down as MULTIVERSE_ROOT.
 MT="${MULTIVERSE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-# Optional, and only needed to seed a release whose channel used a 7-character
-# hash — see `expand` below.
+# Optional. Expands the 7-character hashes the channels used until 2018 (see
+# `expand`), and hashes a moved tip without downloading it (see `narhash`).
 NIXPKGS="${NIXPKGS:-}"
 
 python3 - "$MT/releases.json" "$NIXPKGS" <<'PY'
-import json, os, re, subprocess, sys, time, urllib.error, urllib.parse, urllib.request
+import json, os, re, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 relfile, nixpkgs = sys.argv[1], sys.argv[2]
 BASE = 'https://nix-releases.s3.amazonaws.com/'
@@ -118,9 +125,15 @@ def expand(short):
             rev = subprocess.run(
                 ['git', '-C', nixpkgs, 'rev-parse', '--verify', f'{short}^{{commit}}'],
                 capture_output=True, text=True, check=True).stdout.strip()
+            # Forced to UTC, because the GitHub path below reports UTC and a
+            # commit near midnight otherwise lands on a different day
+            # depending on which source answered. %cs would use the timezone
+            # the committer recorded.
             date = subprocess.run(
-                ['git', '-C', nixpkgs, 'log', '-1', '--format=%cs', rev],
-                capture_output=True, text=True, check=True).stdout.strip()
+                ['git', '-C', nixpkgs, 'log', '-1',
+                 '--format=%cd', '--date=format-local:%Y-%m-%d', rev],
+                capture_output=True, text=True, check=True,
+                env={**os.environ, 'TZ': 'UTC'}).stdout.strip()
             return rev, date
         except subprocess.CalledProcessError:
             pass
@@ -136,10 +149,46 @@ def expand(short):
     return commit['sha'], commit['commit']['committer']['date'][:10]
 
 
+def in_clone(rev):
+    return bool(nixpkgs) and subprocess.run(
+        ['git', '-C', nixpkgs, 'cat-file', '-e', f'{rev}^{{commit}}'],
+        capture_output=True).returncode == 0
+
+
+def narhash(rev):
+    """The narHash builtins.fetchTree will expect for a revision.
+
+    `git archive` when the clone holds the commit, `nix flake prefetch`
+    otherwise. The two agree because nixpkgs sets no `export-ignore`
+    attributes, so the archive and the GitHub tarball hold identical files —
+    the same premise tools/add-narhashes.sh rests on, verified there against
+    25.05. Which one runs is only a question of whether a download is needed.
+
+    The archive is streamed into the temp directory rather than buffered: a
+    nixpkgs tree is a few hundred megabytes and does not belong in memory.
+    """
+    if in_clone(rev):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = subprocess.Popen(
+                ['git', '-C', nixpkgs, 'archive', rev], stdout=subprocess.PIPE)
+            subprocess.run(['tar', '-x', '-C', tmp], stdin=archive.stdout, check=True)
+            archive.stdout.close()
+            if archive.wait() != 0:
+                sys.exit(f'releases.json: git archive failed for {rev}')
+            return subprocess.run(
+                ['nix', 'hash', 'path', '--sri', '--type', 'sha256', tmp],
+                capture_output=True, text=True, check=True).stdout.strip()
+
+    out = subprocess.run(
+        ['nix', 'flake', 'prefetch', '--json', f'github:NixOS/nixpkgs/{rev}'],
+        capture_output=True, text=True, check=True).stdout
+    return json.loads(out)['hash']
+
+
 known = json.load(open(relfile)) if os.path.exists(relfile) else {}
 names = sorted(n for n in prefixes('nixos/') if RELEASE.match(n) and n >= OLDEST)
 
-out, moved, held, lookups = {}, [], 0, 0
+out, moved, held, lookups, hashed = {}, [], 0, 0, 0
 for name in names:
     bump = re.compile(rf'^nixos-{re.escape(name)}\.(\d+)\.([0-9a-f]{{7,12}})$')
     published = [
@@ -163,23 +212,35 @@ for name in names:
                  f"truncated; nothing written.")
 
     # An unchanged channel costs nothing: the short hash already on file
-    # identifies the same commit, so neither the API nor a rewrite is needed.
-    if prior and prior['rev'].startswith(short) and prior.get('build') == build:
+    # identifies the same commit, so neither the API, a tree, nor a rewrite is
+    # needed. A prior without a narHash is not unchanged for this purpose —
+    # that is how the field backfills on the first run after it was added.
+    if (prior and prior['rev'].startswith(short) and prior.get('build') == build
+            and prior.get('narHash')):
         out[name] = prior
         held += 1
         continue
 
     lookups += 1
     rev, date = expand(short)
-    out[name] = {'rev': rev, 'date': date, 'build': build,
+
+    # Reuse a recorded hash when only the field was missing: the commit did not
+    # move, so the tree behind it is the one already hashed.
+    if prior and prior['rev'] == rev and prior.get('narHash'):
+        digest = prior['narHash']
+    else:
+        hashed += 1
+        digest = narhash(rev)
+
+    out[name] = {'rev': rev, 'date': date, 'build': build, 'narHash': digest,
                  'name': f'nixos-{name}.{build}.{short}'}
-    if prior:
+    if prior and prior['rev'] != rev:
         moved.append(f"{name} {prior['rev'][:12]} -> {rev[:12]} ({prior['date']} -> {date})")
 
 json.dump(out, open(relfile, 'w'), indent=1, sort_keys=True)
 
 print(f"releases: {len(out)} tracked   unchanged: {held}   "
-      f"resolved: {lookups} GitHub API lookup(s)")
+      f"resolved: {lookups} lookup(s)   hashed: {hashed} tree(s)")
 for line in moved:
     print(f"  advanced: {line}")
 if not moved and lookups:
