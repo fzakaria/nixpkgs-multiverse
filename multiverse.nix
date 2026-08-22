@@ -29,6 +29,9 @@
   # vendored or locally built artifacts. When null the files are fetched from
   # the release assets data-pins.json names, verified by narHash.
   dataOverride ? null,
+  # Base URL for pinned data artifacts. Null uses data-pins.json; a mirror
+  # must preserve its <tag>/<filename> layout. Ignored with dataOverride.
+  dataBaseUrl ? null,
   # Base fetchTree arguments for a revision. Override this function to use a
   # mirror; rev and, for indexed revisions, narHash are added when relevant.
   fetchTreeArgs ? rev: {
@@ -691,7 +694,7 @@ let
       in
       (builtins.fetchTree {
         type = "file";
-        url = "${dataPins.baseUrl}/${pin.tag}/${name}";
+        url = "${if builtins.isNull dataBaseUrl then dataPins.baseUrl else dataBaseUrl}/${pin.tag}/${name}";
         inherit (pin) narHash;
       }).outPath;
 
