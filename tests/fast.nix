@@ -3,7 +3,7 @@
 #
 #   nix eval --json -f tests/fast.nix --apply 'f: f { }'
 #
-# dataOverride points at tests/fixtures/fast-data, so nothing here fetches
+# fetchArtifact reads tests/fixtures/fast-data, so nothing here fetches
 # the pinned release assets — the test runs anywhere, offline included, and
 # keeps running unchanged as the real pins move.
 #
@@ -33,14 +33,14 @@
 let
   mv = import ../multiverse.nix {
     inherit system;
-    dataOverride = ../tests/fixtures/fast-data;
+    fetchArtifact = { name, ... }: ../tests/fixtures/fast-data + "/${name}";
   };
 
   # The importer knob under test: unmatched pairs fall back to the real
   # derivation instead of throwing.
   mvEval = import ../multiverse.nix {
     inherit system;
-    dataOverride = ../tests/fixtures/fast-data;
+    fetchArtifact = { name, ... }: ../tests/fixtures/fast-data + "/${name}";
     fastFallback = "eval";
   };
 
@@ -50,11 +50,11 @@ let
   # only one of the two files still fails this.
   mvTipAhead = import ../multiverse.nix {
     inherit system;
-    dataOverride = ../tests/fixtures/fast-data-tip-ahead;
+    fetchArtifact = { name, ... }: ../tests/fixtures/fast-data-tip-ahead + "/${name}";
   };
   mvClosedAhead = import ../multiverse.nix {
     inherit system;
-    dataOverride = ../tests/fixtures/fast-data-closed-ahead;
+    fetchArtifact = { name, ... }: ../tests/fixtures/fast-data-closed-ahead + "/${name}";
   };
 
   # A system the fixture has no artifacts for. Issue #12 was fast handing an
@@ -62,7 +62,7 @@ let
   # is served from its own file or not at all.
   mvForeign = import ../multiverse.nix {
     system = "riscv64-linux";
-    dataOverride = ../tests/fixtures/fast-data;
+    fetchArtifact = { name, ... }: ../tests/fixtures/fast-data + "/${name}";
   };
 
   hello = mv.fast.version "hello" "2.12.2";

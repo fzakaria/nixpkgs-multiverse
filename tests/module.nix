@@ -140,6 +140,15 @@ let
     };
   };
 
+  # A fetcher that throws instead of returning a tree: what is under test
+  # is whether the option reaches the multiverse the module builds, and throwing
+  # when called says so without a byte of network.
+  probed = eval ../modules/nixos.nix {
+    enable = true;
+    pins.ripgrep = pinnedVersion;
+    fetchRevision = _r: throw "multiverse-test: fetchRevision reached the module";
+  };
+
   failing = cfg: builtins.filter (a: !a.assertion) cfg.assertions;
 in
 
@@ -156,6 +165,11 @@ assert home.environment.systemPackages == [ ];
 # assertion that materialises a revision.
 assert builtins.attrNames nixos.multiverse.pinned == [ "ripgrep" ];
 assert nixos.multiverse.pinned.ripgrep.version == pinnedVersion;
+
+# The same pin, through a module carrying a mirror hook, resolves through the
+# hook rather than around it: the module names the arguments it forwards, so a
+# hook it was not taught to pass would silently go back to GitHub.
+assert !(builtins.tryEval probed.multiverse.pinned.ripgrep.version).success;
 
 # Minimising is on by default, and `plan` says how the pins divide before
 # anything is fetched. This pair shares one revision, so the whole set costs

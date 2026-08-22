@@ -21,6 +21,7 @@ in
   lock = evalTest "test-lock" ../tests/lock.nix;
   minimize = evalTest "test-minimize" ../tests/minimize.nix;
   fast = evalTest "test-fast" ../tests/fast.nix;
+  mirrors = evalTest "test-mirrors" ../tests/mirrors.nix;
   compose = (import ../tests/compose.nix { inherit system; }).env;
 
   # Every in-repository markdown link, against the headings that actually exist.

@@ -144,10 +144,9 @@ Three tiers, decided by one question: does anything pin it?
   fails closed if the convention is ever violated. Consumers fetch with
   `builtins.fetchTree { type = "file"; ... }`, lazily, keeping this flake's
   `inputs = { }` founding line intact. `data-pins.json.baseUrl` is the canonical
-  location; callers can set `dataBaseUrl` to a mirror that preserves the
-  `<baseUrl>/<tag>/<filename>` layout. The same narHash verifies the mirrored
-  bytes. This override affects artifacts fetched by the multiverse API, not the
-  publishing and restoration tools.
+  location; `fetchArtifact` points the fetch at a mirror, or at a
+  local directory. The fetcher covers artifacts read by the multiverse API, not
+  the publishing and restoration tools.
 - **The rolling release** (`data-rolling`) carries the working state between
   cuts: the current `outpaths-<system>.json` and `tip-outpaths-<system>.json`,
   the census snapshots, the per-system miss lists, and the crawl graph the

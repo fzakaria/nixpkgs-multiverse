@@ -201,8 +201,9 @@ mkMultiverse {
   # unmatched pairs fall back to the real
   # derivation silently (default: "throw")
   fastFallback = "eval";
-  # vendor the data files, skip the pin
-  dataOverride = ./artifacts;
+  # read the data files from a directory instead
+  # of fetching them (see Mirrors below)
+  fetchArtifact = { name, ... }: ./artifacts + "/${name}";
 }
 ```
 
@@ -581,38 +582,95 @@ eval path or nothing. See
 
 ## Mirrors
 
-The predefined `multiverse.<system>` flake output uses the default upstream
-locations. To fetch nixpkgs sources and fast-path data through mirrors, create a
-custom instance with `lib.mkMultiverse` (or import `multiverse.nix` directly):
+Two fetchers decide where a multiverse gets its bytes: `fetchRevision` for
+nixpkgs trees, `fetchArtifact` for the pinned fast-path files. Each is handed
+the record naming what is wanted and returns the fetched thing — a
+`builtins.fetchTree` result for a tree, a path for a file.
 
 ```nix
 mv = multiverse.lib.mkMultiverse {
   system = "x86_64-linux";
 
-  fetchTreeArgs = rev: {
+  fetchRevision = r: builtins.fetchTree {
     type = "tarball";
-    url = "https://artifactory.example.org/artifactory/nixpkgs/archive/${rev}.tar.gz";
+    url = "https://artifactory.example.org/artifactory/nixpkgs/${r.rev}.tar.gz";
+    inherit (r) narHash;
   };
 
-  dataBaseUrl =
-    "https://mirror.example/nixpkgs-multiverse/releases/download";
+  fetchArtifact = { name, tag, narHash, baseUrl }: (builtins.fetchTree {
+    type = "file";
+    url = "https://artifactory.example.org/artifactory/multiverse/${tag}-${name}";
+    inherit narHash;
+  }).outPath;
 };
 ```
 
-`fetchTreeArgs` receives the full revision and returns the base input passed to
-`builtins.fetchTree`. Multiverse adds `rev` and, for indexed revisions, the
-recorded `narHash`, overriding attributes of the same name returned by the
-function. The Artifactory example therefore remains content-verified for
-indexed revisions.
+Returning the fetched thing, rather than arguments for fetching it, is what
+makes a fetcher unrestricted: `fetchurl`, a store path handed in from elsewhere,
+or a directory already on disk are all just values to return.
 
-Release tips have no recorded `narHash`. A custom source used for release
-selectors must consequently be accepted as locked by Nix, or return its own
-`narHash`; otherwise pure evaluation rejects the fetch. The default GitHub
-source is locked by its full commit hash.
+Both are accepted by `lib.mkMultiverse`, `lib.readLock`, `lib.pinOverlay` and
+the NixOS, nix-darwin and home-manager modules — which is where a mirror is
+usually needed, since that is how a configuration consumes this flake:
 
-`dataBaseUrl` replaces only the URL prefix used for pinned artifacts. A null
-value uses `data-pins.json.baseUrl`; the file names, release tags, hashes and
-supported systems still come from `data-pins.json`. A mirror must therefore
-preserve the `<baseUrl>/<tag>/<filename>` layout and serve identical bytes,
-which remain verified by `narHash`. When `dataOverride` is set, local files are
-used instead and `dataBaseUrl` is ignored.
+```nix
+multiverse = {
+  enable = true;
+  fetchRevision = r: builtins.fetchTree {
+    type = "tarball";
+    url = "https://mirror.example/${r.rev}.tar.gz";
+    inherit (r) narHash;
+  };
+  pins.ripgrep = "13.0.0";
+};
+```
+
+Only the predefined `multiverse.<system>` output cannot take them: it is an
+attrset, not a function.
+
+### Vendoring is a fetcher that fetches nothing
+
+There is no separate option for local artifacts. A directory of
+`outpaths-*.json` and friends is one line:
+
+```nix
+mkMultiverse {
+  system = "x86_64-linux";
+  fetchArtifact = { name, ... }: ./artifacts + "/${name}";
+}
+```
+
+Nothing is fetched and no hash is checked, because the fetcher did neither.
+
+Which systems are served still comes from `data-pins.json`, the only party that
+can speak for what was published. A directory covering fewer systems than the
+pin therefore fails naming the file it has no copy of, rather than with the
+"no store-path index for this system" message an unpublished system gets.
+
+### The two fetchers differ on narHash
+
+`fetchRevision`'s answer is checked: multiverse compares the returned `narHash`
+against the one recorded for that revision — by `build-index.sh` for an indexed
+revision, by `fetch-releases.sh` for a release tip — and throws if they differ. The index records
+digests for the trees those hashes name, so a mirror serving anything else
+resolves to derivations no digest describes. The check sits outside the fetch
+deliberately — it holds however the fetcher got the tree, including mechanisms
+`builtins.fetchTree` never sees.
+
+`fetchArtifact`'s answer is not checked. These files are JSON this evaluation
+parses, not trees that have to match what Hydra built, and a deployment that
+regenerates them with `tools/` holds different bytes legitimately. The pinned
+`narHash` is handed to the fetcher, which decides what to do with it.
+
+### One small file at a time
+
+The default `fetchArtifact` pulls exactly one file per artifact, and only when
+forced: a fast lookup takes `outpaths-<system>.json`,
+`tip-outpaths-<system>.json` and `outs-<system>.json`, and the eval path takes
+none of them.
+
+A fetcher may instead pull a whole tree and index into it — one git ref holding
+every artifact, say. That trades three targeted fetches for one large one and
+hands every x86_64 consumer the aarch64 half, which is exactly what publishing
+[one file per system](./store-paths.md#a-path-belongs-to-one-system) exists to
+avoid. Prefer a per-file mirror.

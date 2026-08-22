@@ -61,15 +61,14 @@ Revisions are fetched with `builtins.fetchTree`, pinned by `narHash`, at the
 moment a derivation is forced and not before:
 
 ```nix
-builtins.fetchTree (fetchTreeArgs r.rev // {
-  inherit (r) rev narHash;
-})
+fetchRevision r      # defaults to builtins.fetchTree { type = "github"; ... }
 ```
 
-`fetchTreeArgs` receives the selected revision and returns the base fetch input.
-It defaults to the NixOS/nixpkgs GitHub repository, but callers can construct a
-revision-specific mirror URL instead. Multiverse adds the revision and, for
-indexed revisions, its content hash.
+`fetchRevision` receives the record naming the revision and returns a
+`builtins.fetchTree` result; a deployment behind a mirror returns a fetcher of
+its own. Multiverse checks the returned `narHash` against the one recorded for that
+revision — the index records digests for the trees those hashes name. See
+[mirrors](./nix-api.md#mirrors).
 
 Everything upstream of that call: enumerating versions, resolving a date to a
 revision, reading a lifetime is a Nix evaluation over JSON that ships with the

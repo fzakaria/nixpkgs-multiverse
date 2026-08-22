@@ -3,6 +3,16 @@
 # Nothing here touches a package set of its own — each entry imports
 # multiverse.nix with whatever system, config and overlays the caller passes —
 # so this file is usable from outside any per-system scope.
+let
+  # The mirror hooks as an import argument set, omitting the ones left null so
+  # multiverse.nix falls back to its own defaults. Every entry point here takes
+  # both: only mkMultiverse forwards an argument set wholesale, so the rest
+  # would otherwise drop a mirror and quietly go back to GitHub.
+  mirrorArgs =
+    { fetchRevision, fetchArtifact }:
+    (if fetchRevision == null then { } else { inherit fetchRevision; })
+    // (if fetchArtifact == null then { } else { inherit fetchArtifact; });
+in
 {
   # `mkMultiverse` for callers who need to pass config/overlays through.
   mkMultiverse = args: import ../multiverse.nix args;
@@ -21,8 +31,15 @@
       file,
       config ? { },
       overlays ? [ ],
+      fetchRevision ? null,
+      fetchArtifact ? null,
     }:
-    (import ../multiverse.nix { inherit system config overlays; }).readLock file;
+    let
+      mv = import ../multiverse.nix (
+        { inherit system config overlays; } // mirrorArgs { inherit fetchRevision fetchArtifact; }
+      );
+    in
+    mv.readLock file;
 
   # An overlay that rewrites `pkgs.<attr>` to a pinned version, for the cases the
   # modules deliberately do not cover: making every *other* module see the pin,
@@ -48,13 +65,18 @@
       config ? { },
       overlays ? [ ],
       minimize ? true,
+      fetchRevision ? null,
+      fetchArtifact ? null,
     }:
     final: _prev:
     let
-      mv = import ../multiverse.nix {
-        system = final.stdenv.hostPlatform.system;
-        inherit config overlays;
-      };
+      mv = import ../multiverse.nix (
+        {
+          system = final.stdenv.hostPlatform.system;
+          inherit config overlays;
+        }
+        // mirrorArgs { inherit fetchRevision fetchArtifact; }
+      );
     in
     if minimize then
       mv.solvePins pins

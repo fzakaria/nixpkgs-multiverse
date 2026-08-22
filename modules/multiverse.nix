@@ -29,10 +29,15 @@ let
   # One multiverse for the whole module. Revisions are memoised per instance, so
   # sharing it means two pins that resolve to the same revision fetch it once;
   # building a fresh multiverse per pin would fetch it twice.
-  mv = import ../multiverse.nix {
-    system = pkgs.stdenv.hostPlatform.system;
-    inherit (cfg) config overlays;
-  };
+  mv = import ../multiverse.nix (
+    {
+      system = pkgs.stdenv.hostPlatform.system;
+      inherit (cfg) config overlays;
+    }
+    # Omitted rather than passed as null, so multiverse.nix keeps its defaults.
+    // lib.optionalAttrs (cfg.fetchRevision != null) { inherit (cfg) fetchRevision; }
+    // lib.optionalAttrs (cfg.fetchArtifact != null) { inherit (cfg) fetchArtifact; }
+  );
 
   # The type nixpkgs and home-manager both use for `nixpkgs.overlays`, so a list
   # accepted there is accepted here.
@@ -83,6 +88,50 @@ in
         nixpkgs only grew an `overlays` argument in 17.03. If this is non-empty
         and a pin resolves to a revision older than that, resolving it throws
         rather than silently dropping the overlays.
+      '';
+    };
+
+    fetchRevision = lib.mkOption {
+      type = lib.types.nullOr (lib.types.functionTo lib.types.attrs);
+      default = null;
+      example = lib.literalExpression ''
+        r: builtins.fetchTree {
+          type = "tarball";
+          url = "https://artifactory.example.org/artifactory/nixpkgs/''${r.rev}.tar.gz";
+          inherit (r) narHash;
+        }
+      '';
+      description = ''
+        How one nixpkgs revision becomes a tree, for deployments that reach
+        GitHub through a mirror. Receives the index record naming the revision
+        and returns a `builtins.fetchTree` result.
+
+        Multiverse checks the returned `narHash` against the one recorded for
+        that revision, so a mirror must serve byte-identical trees or fail on
+        the hash. Release tips carry a recorded hash too, so every selector is
+        checked the same way.
+      '';
+    };
+
+    fetchArtifact = lib.mkOption {
+      type = lib.types.nullOr (lib.types.functionTo lib.types.path);
+      default = null;
+      example = lib.literalExpression ''
+        { name, tag, ... }:
+        (builtins.fetchTree {
+          type = "git";
+          url = "https://git.example.org/nixpkgs-multiverse.git";
+          ref = tag;
+        }).outPath + "/''${name}"
+      '';
+      description = ''
+        How one pinned fast-path artifact becomes a readable path. Receives the
+        file `name`, the `tag` and `narHash` data-pins.json holds for it, and
+        the canonical `baseUrl`.
+
+        Returning a path rather than fetch arguments is what lets a fetcher pull
+        a whole tree and index into it, or hand back a local file and fetch
+        nothing. Verification is the fetcher's from here.
       '';
     };
 

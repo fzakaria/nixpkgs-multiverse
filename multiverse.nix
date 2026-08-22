@@ -25,20 +25,46 @@
   #   "eval"  — fall back to the real derivation transparently. For scripts
   #             that want coverage over predictability.
   fastFallback ? "throw",
-  # A directory holding outpaths.json, tip-outpaths.json and outs.json, for
-  # vendored or locally built artifacts. When null the files are fetched from
-  # the release assets data-pins.json names, verified by narHash.
-  dataOverride ? null,
-  # Base URL for pinned data artifacts. Null uses data-pins.json; a mirror
-  # must preserve its <tag>/<filename> layout. Ignored with dataOverride.
-  dataBaseUrl ? null,
-  # Base fetchTree arguments for a revision. Override this function to use a
-  # mirror; rev and, for indexed revisions, narHash are added when relevant.
-  fetchTreeArgs ? rev: {
-    type = "github";
-    owner = "NixOS";
-    repo = "nixpkgs";
-  },
+  # How one nixpkgs revision becomes a tree, given the record naming it: a
+  # revisions.json entry ({ rev, date, name, narHash }) or a releases.json one,
+  # which carries no narHash. Return a `builtins.fetchTree` result — `flakeAt`
+  # hands it out as flake sourceInfo, so outPath, rev, narHash and lastModified
+  # all have to be there.
+  #
+  # A mirror may fetch however it likes; multiverse checks the narHash of what
+  # comes back against the one the index recorded, because the index records
+  # digests for the trees those hashes name.
+  fetchRevision ?
+    r:
+    builtins.fetchTree (
+      {
+        type = "github";
+        owner = "NixOS";
+        repo = "nixpkgs";
+        inherit (r) rev;
+      }
+      // (if r ? narHash then { inherit (r) narHash; } else { })
+    ),
+  # How one pinned data artifact becomes a readable path, given its file name,
+  # the data-pins.json entry for it ({ tag, narHash }) and that file's baseUrl.
+  #
+  # Returning a path rather than fetch arguments is what lets a fetcher pull a
+  # whole tree and index into it — one git ref holding every artifact, say — or
+  # hand back a local file and fetch nothing. Verification is the fetcher's
+  # from here: these are JSON this evaluation parses, not trees that have to
+  # match what Hydra built.
+  fetchArtifact ?
+    {
+      name,
+      tag,
+      narHash,
+      baseUrl,
+    }:
+    (builtins.fetchTree {
+      type = "file";
+      url = "${baseUrl}/${tag}/${name}";
+      inherit narHash;
+    }).outPath,
 }:
 
 let
@@ -195,18 +221,37 @@ let
       else
         i;
 
+  # One fetched tree, checked against the hash its record carries.
+  #
+  # Every record carries one: build-index.sh hashes a revision from the
+  # checkout it already makes to extract versions, and fetch-releases.sh hashes
+  # a channel tip when it moves. So a release is not a special case here, and
+  # `at "26.05"` is verified exactly as an indexed selector is.
+  #
+  # The check sits outside the fetch so it holds however a fetcher got the
+  # tree, including mechanisms builtins.fetchTree never sees.
+  treeFor =
+    r:
+    let
+      tree = fetchRevision r;
+    in
+    if tree.narHash == r.narHash then
+      tree
+    else
+      throw ''
+        multiverse: fetchRevision returned a tree for ${r.rev} hashing
+        ${tree.narHash}, but ${r.narHash} was recorded. Store paths derive from
+        content, so that tree yields derivations no digest in the store-path
+        index describes. Serve the same bytes, or drop the fetcher.
+      '';
+
   pathFor =
     i:
     let
       r = revAt i;
     in
     if r ? narHash then
-      builtins.fetchTree (
-        fetchTreeArgs r.rev
-        // {
-          inherit (r) rev narHash;
-        }
-      )
+      treeFor r
     else
       throw "multiverse: revision ${labelOf i} has no narHash; re-run tools/build-index.sh";
 
@@ -296,23 +341,17 @@ let
     }) offsets
   );
 
-  # Release tips carry no narHash and need none: for type = "github" a full
-  # commit hash is itself the lock, and fetchTree accepts it under pure
-  # evaluation. That is what keeps refreshing releases.json free — it never has
-  # to download a tree just to hash it.
-  pathForRelease = r: builtins.fetchTree (fetchTreeArgs r.rev // { inherit (r) rev; });
-
   # Memoised the same way as instances, and just as lazy: naming a release
   # costs a thunk, forcing one costs a fetch.
   releaseInstances = builtins.mapAttrs (
-    name: r: tagged (r // { release = name; }) (importRevision (pathForRelease r))
+    name: r: tagged (r // { release = name; }) (importRevision (treeFor r))
   ) releaseTable;
 
   # A fetched revision as a *flake* attrset: the value `inputs.nixpkgs` would
   # have been, had the revision been declared as a flake input. Shaped after
   # what Nix's own call-flake.nix constructs — outputs first, then sourceInfo,
   # so source metadata wins any collision, then the bookkeeping attributes.
-  # `pathFor` and `pathForRelease` both return a fetchTree result, which is
+  # `pathFor` and `treeFor` both return a fetchTree result, which is
   # exactly the sourceInfo attrset this needs (outPath, rev, narHash,
   # lastModified, ...).
   #
@@ -362,7 +401,7 @@ let
   );
 
   releaseFlakeInstances = builtins.mapAttrs (
-    name: r: mkFlakeInstance (r // { release = name; }) (pathForRelease r)
+    name: r: mkFlakeInstance (r // { release = name; }) (treeFor r)
   ) releaseTable;
 
   # Releases as a two-level tree, split at the dot: "25.05" becomes
@@ -679,24 +718,21 @@ let
 
   dataPins = builtins.fromJSON (builtins.readFile ./data-pins.json);
 
-  # One artifact file as a local path: the vendored tree when dataOverride is
-  # set, otherwise a fetchTree "file" fetch of the pinned release asset. The
-  # narHash makes the pin fail closed against any overwritten asset.
+  # One artifact file as a local path: whatever fetchArtifact hands back. A
+  # vendored tree is not a special case, it is a fetcher that fetches nothing —
+  # `{ name, ... }: ./artifacts + "/${name}"`.
   artifactPath =
     name:
-    if dataOverride != null then
-      dataOverride + "/${name}"
-    else
-      let
-        pin =
-          dataPins.files.${name}
-            or (throw "multiverse: data-pins.json has no pin for ${name}; re-run tools/bump-data-pin.sh");
-      in
-      (builtins.fetchTree {
-        type = "file";
-        url = "${if builtins.isNull dataBaseUrl then dataPins.baseUrl else dataBaseUrl}/${pin.tag}/${name}";
-        inherit (pin) narHash;
-      }).outPath;
+    let
+      pin =
+        dataPins.files.${name}
+          or (throw "multiverse: data-pins.json has no pin for ${name}; re-run tools/bump-data-pin.sh");
+    in
+    fetchArtifact {
+      inherit name;
+      inherit (pin) tag narHash;
+      inherit (dataPins) baseUrl;
+    };
 
   readArtifact = name: builtins.fromJSON (builtins.readFile (artifactPath name));
 
@@ -705,8 +741,8 @@ let
   # count. Neither file holds an offset — a digest is keyed by (attr, version)
   # and is timeless — so this cannot resolve to the wrong commit the way a
   # stale index can. What it catches is a pin describing a history this
-  # checkout is not part of: a hand-assembled dataOverride, or a pin rolled
-  # back onto an older tree.
+  # checkout is not part of: hand-assembled artifacts, or a pin rolled back
+  # onto an older tree.
   #
   # Covering fewer revisions is the ordinary state and stays allowed. The
   # dated data release is cut once a UTC day while revisions.json advances
@@ -734,15 +770,11 @@ let
   tipOutpathsFile = "tip-outpaths-${system}.json";
   outsFile = "outs-${system}.json";
 
-  # Whether this system has those files. Under a data pin that is a question
-  # about data-pins.json; under a vendored dataOverride it is a question about
-  # the directory, which is what lets a fixture cover one system and not
-  # another.
-  fastSupported =
-    if dataOverride != null then
-      builtins.pathExists (dataOverride + "/${outpathsFile}")
-    else
-      dataPins.files ? ${outpathsFile};
+  # Whether this system has those files, asked of data-pins.json: it is the only
+  # party that can speak for what was published. A fetchArtifact serving fewer
+  # systems than the pin answers for itself, failing on the file it has no copy
+  # of.
+  fastSupported = dataPins.files ? ${outpathsFile};
 
   # Closed pairs, plus the snapshot of what was current when the pin was cut.
   # Both files are keyed, timeless truth — (attr, version) -> digest — so a
