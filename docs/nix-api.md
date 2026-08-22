@@ -51,6 +51,52 @@ The same question, and every other one below, is a subcommand of
 [`mvs`](./cli.md), `mvs query versions python3`, which provides slightly
 better ergonomics.
 
+## Canonical (normalized) names
+
+The index is keyed by the raw nixpkgs attribute, so `go`, `go_1_25` and
+`python314` are separate keys. A **canonical name** — `go`, `python` — groups a
+package's versioned attributes under one handle. Every version-selector surface
+accepts it: `versionsOf`, `revOf`, `version`, `versions.<name>`,
+`solvePins`/`pinPlan` (and the module's `pins`), plus the `fast.*` equivalents.
+The handle you pass is the handle you get back —
+`solvePins { go = "1.25.13"; }` returns `{ go = <drv>; }` and its `certificate`
+reads `go 1.25.13`, never `go_1_25`.
+
+`canonical.json` at the repo root maps each name to regex patterns for its
+versioned siblings (`python[0-9]+` matches `python314` but not `python314Full`).
+`versionsOf` merges them; where members share a version the newest revision
+wins. `python` spans both majors, disambiguated by version — `python@2.7.18`,
+`python@3.14`, bare `python` the newest overall.
+
+```console
+# every go_1_* attribute merged and sorted — a superset of the plain `go` alias
+$ nix eval --json --apply 'f: f "go"' \
+   github:fzakaria/nixpkgs-multiverse#multiverse.x86_64-linux.versionsOf | jq '.[-3:]'
+[
+  "1.25.11",
+  "1.25.12",
+  "1.25.13"
+]
+```
+
+Two surfaces stay **raw**, keyed per-attribute. Revision snapshots — `at`,
+`tip`, `daysBehind` and their flake attrpaths (`#26.05.go`, `#tip.go`,
+`fast.at`, `fast.tip`) — pin one revision, where canonical picking across
+revisions has no meaning. History — `historyOf`, `lifetimeOf`, `versionAt`,
+`goneSince` — reads one attribute's timeline. The [`mvs`](./cli.md) CLI does not
+yet resolve canonical names; that parity is a follow-up.
+
+`latest.<name>` and `fast.latest.<name>` are also **raw**: the newest version
+the attribute _itself_ carries, not the newest anywhere in the group. Merging
+siblings would break `latest`, because the newest version in a family is
+routinely a **prerelease** — a fresh `rc`/`beta` lands in its own sibling
+(`go_1_27`, `python314`) well before it becomes the default, so a canonical
+`latest.go` would resolve to `1.27rc1`. The raw attribute sidesteps that without
+a stable-vs-prerelease heuristic: nixpkgs already keeps the bare alias on the
+stable default. The cost is that `latest.<attr>` trails when the default alias
+trails its newest sibling (python being the standout); use `versions.<name>` for
+the full canonical list when you want a sibling.
+
 Create a specific complete revision of Nixpkgs using the `at` function.
 
 ```nix
@@ -305,6 +351,10 @@ $ nix eval 'github:fzakaria/nixpkgs-multiverse#fast.tip.neovim-unwrapped.version
 Reach for `fast.tip` when you want what the newest indexed revision,
 and `latest` only when you want the newest thing that substitutes
 without an evaluation.
+
+`fast.latest.<name>` does not span [canonical](#canonical-normalized-names)
+siblings — like eval `latest`, it is the raw attribute: the newest _servable_
+version the attribute itself carries, never a version a sibling ships.
 
 ### Why releases have no fast path
 

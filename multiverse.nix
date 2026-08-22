@@ -92,6 +92,13 @@ let
 
   attrIndex = checkedIndex.attrs;
 
+  # Normalized-name -> [sibling attribute] groups, precomputed by
+  # tools/build-index.sh from canonical.json. The group name is itself the
+  # default package attribute and is merged in implicitly (see canonicalPick),
+  # so it is not repeated in the stored list. `or {}` tolerates an index that
+  # predates the feature, as null tips do.
+  canonicalGroups = checkedIndex.canonical or { };
+
   # A human handle for a revision: date plus short rev. Release names are
   # deliberately not used here — a release name resolves to a moving channel
   # tip, so labelling a fixed offset with one would name a tree that `at` no
@@ -423,17 +430,71 @@ let
   # tree nobody evaluated.
   #
   # `mapAttrs` is lazy in its values, so an attribute whose versions are only
-  # counted or named costs nothing here.
+  # counted or named costs nothing here. This is the *raw* per-attribute view:
+  # canonical resolution happens one layer up, in picksFor.
   versionsFor =
     attr: builtins.mapAttrs (_: off: if off == null then indexTip else off) (attrIndex.${attr} or { });
 
   indexTip = checkedIndex.revisionCount - 1;
+
+  # Merge a canonical group into one `version -> { attr; off; }` map. The group
+  # name is the default package attribute, so it is folded in ahead of the
+  # stored siblings. Where members share a version the newest revision wins (a
+  # plain offset max, not a version compare); an offset tie breaks toward the
+  # longer attribute so the pick stays stable as the default line moves. Both
+  # fields are load-bearing downstream: `off` names the revision, `attr` names
+  # the sibling to build (a canonical version may live in a sibling, not name).
+  canonicalPick =
+    name:
+    builtins.foldl' (
+      acc: attr:
+      let
+        offs = versionsFor attr;
+      in
+      builtins.foldl' (
+        a: ver:
+        let
+          off = offs.${ver};
+          prev = a.${ver} or null;
+        in
+        if
+          prev == null
+          || off > prev.off
+          || (off == prev.off && builtins.stringLength attr > builtins.stringLength prev.attr)
+        then
+          a // { ${ver} = { inherit attr off; }; }
+        else
+          a
+      ) acc (builtins.attrNames offs)
+    ) { } ([ name ] ++ canonicalGroups.${name});
 
   # `builtins.attrNames` sorts lexicographically, which puts 3.12.10 before
   # 3.12.7. Sort with the version-aware comparator instead. Deliberately uses
   # only builtins: reaching for `lib.sort` would mean instantiating a revision
   # just to order a list of strings.
   sortVersions = builtins.sort (a: b: builtins.compareVersions a b < 0);
+
+  # `version -> { attr; off; }` for a name, in one shape whether it is a
+  # canonical group (members merged) or a plain attribute. Callers then never
+  # have to branch on membership: a raw attribute is just a group of one whose
+  # winning attr is itself.
+  picksFor =
+    name:
+    if canonicalGroups ? ${name} then
+      canonicalPick name
+    else
+      builtins.mapAttrs (_: off: {
+        inherit off;
+        attr = name;
+      }) (versionsFor name);
+
+  # The chokepoint: a name and version to the sibling attribute that actually
+  # ships that version — the canonical winner for a group, identity for a plain
+  # attribute (or an unknown version, which the caller's own lookup then
+  # reports). Every resolver that keys a *different* index by attribute
+  # (planFor's history runs, fastVersion's store paths) maps through this first,
+  # so canonical support is one swap at the door rather than a rewrite inside.
+  resolveAttr = name: ver: (picksFor name).${ver}.attr or name;
 
   # When each version was present, as run-length ranges of revision offsets —
   # the timeline `index` deliberately does not carry, since it keeps only the
@@ -527,7 +588,11 @@ let
     pins:
     let
       attrs = builtins.attrNames pins;
-      blocks = map (attr: blockOf attr pins.${attr}) attrs;
+      # Resolve each pin's handle to the sibling that ships its version before
+      # reading the history runs, which are keyed per raw attribute. The plan
+      # keeps the handle the caller typed (see describePin); only the run it is
+      # placed against comes from the sibling.
+      blocks = map (attr: blockOf (resolveAttr attr pins.${attr}) pins.${attr}) attrs;
       firstOf = i: builtins.elemAt (builtins.elemAt blocks i) 0;
       lastOf = i: builtins.elemAt (builtins.elemAt blocks i) 1;
 
@@ -662,10 +727,11 @@ let
   versionDrv =
     attr: ver:
     let
-      i = (versionsFor attr).${ver} or null;
-      known = sortVersions (builtins.attrNames (versionsFor attr));
+      picks = picksFor attr;
+      pick = picks.${ver} or null;
+      known = sortVersions (builtins.attrNames picks);
     in
-    if i == null then
+    if pick == null then
       throw ''
         multiverse: no revision provides ${attr} ${ver}.
         Known versions: ${
@@ -673,7 +739,10 @@ let
         }
       ''
     else
-      instances.${toString i}.${attr};
+      # pick.attr is the sibling that shipped this version (itself, for a plain
+      # attribute); pick.off names the revision. Canonical names build here for
+      # free — the group's winning sibling, at its newest revision.
+      instances.${toString pick.off}.${pick.attr};
 
   dataPins = builtins.fromJSON (builtins.readFile ./data-pins.json);
 
@@ -865,13 +934,17 @@ let
   fastVersion =
     attr: ver:
     let
-      entry = fastEntryFor attr ver;
+      # The store-path index is keyed per raw attribute, so resolve the sibling
+      # first; the fake is then named for the real package it serves. evalDrv
+      # (the .eval fallback) resolves the same canonical name on its own.
+      real = resolveAttr attr ver;
+      entry = fastEntryFor real ver;
       evalDrv = versionDrv attr ver;
     in
     if entry == null then
       fastMissing attr ver ''versions.${attr}."${ver}"'' evalDrv
     else
-      mkFake attr ver entry evalDrv;
+      mkFake real ver entry evalDrv;
 in
 rec {
   inherit revisions;
@@ -971,8 +1044,9 @@ rec {
   #   daysBehind "dc460ec76cbf" 30  a month before that commit landed
   daysBehind = sel: days: instanceBehind (dateOfSelector sel) days;
 
-  # Every known version of an attribute, oldest first.
-  versionsOf = attr: sortVersions (builtins.attrNames (versionsFor attr));
+  # Every known version of an attribute, oldest first. A canonical name merges
+  # its members, so the list is a superset of the raw attribute.
+  versionsOf = name: sortVersions (builtins.attrNames (picksFor name));
 
   # ---------------------------------------------------------------------------
   # History. Everything below reads index/history.json rather than the index,
@@ -1103,11 +1177,11 @@ rec {
 
   # The revision a given version resolves to, as a human handle.
   revOf =
-    attr: ver:
+    name: ver:
     let
-      i = (versionsFor attr).${ver} or null;
+      pick = (picksFor name).${ver} or null;
     in
-    if i == null then null else labelOf i;
+    if pick == null then null else labelOf pick.off;
 
   # The headline operation: a specific version of a package. Distinct graphs
   # coexist happily — Nix keeps them disjoint, so several versions of the same
@@ -1145,7 +1219,9 @@ rec {
         )
       ) { } plan.groups;
     in
-    builtins.mapAttrs (attr: _: instances.${toString homes.${attr}}.${attr}) pins;
+    # Keyed by the handle the caller passed, so the result round-trips against
+    # `pins`; the value resolves the sibling that actually ships the version.
+    builtins.mapAttrs (attr: _: instances.${toString homes.${attr}}.${resolveAttr attr pins.${attr}}) pins;
 
   # The same plan `solvePins` builds, as data rather than as derivations:
   #
@@ -1211,9 +1287,13 @@ rec {
   #
   # `mapAttrs` is lazy in its values, so forcing one version instantiates
   # exactly one revision and leaves every other pair an untouched thunk.
-  versions = builtins.mapAttrs (
-    attr: vers: builtins.mapAttrs (ver: _: version attr ver) vers
-  ) attrIndex;
+  # Canonical names are appended and win on collision (right of `//`); the group
+  # includes the raw attribute, so the result is a superset of what it replaces.
+  versions =
+    builtins.mapAttrs (attr: vers: builtins.mapAttrs (ver: _: version attr ver) vers) attrIndex
+    // builtins.mapAttrs (
+      name: _: builtins.mapAttrs (ver: pick: version pick.attr ver) (canonicalPick name)
+    ) canonicalGroups;
 
   # Newest known version of each attribute, as a plain attrset so it works as a
   # flake installable:
@@ -1225,6 +1305,16 @@ rec {
   # would mix an alias into keys that are otherwise version strings, and would
   # collide with any package whose upstream literally ships a version called
   # "latest" (`relibc` does). Here the two namespaces never touch.
+  #
+  # The raw attribute, NOT the canonical group. Merging siblings would make
+  # `latest` the newest version anywhere in the group, which is routinely a
+  # prerelease: a fresh rc/beta lands in its own sibling (`go_1_27`, `python314`)
+  # long before it becomes the default, so `latest.go` would resolve to
+  # `1.27rc1`. Skipping those needs a stable-vs-prerelease test, and the raw
+  # attribute already is that answer — nixpkgs keeps the bare alias on the
+  # stable default. The cost is `latest.<attr>` trailing when the default alias
+  # trails its newest sibling (python being the standout); `versions.<attr>` has
+  # the full merged list when you want a sibling.
   #
   # `mapAttrs` is lazy in its values, so this costs one thunk per attribute and
   # resolves nothing until asked.
@@ -1380,9 +1470,11 @@ rec {
       # The cost is one parse of index/versions.json (~0.2s) on the first
       # fast.versions lookup; mapAttrs stays lazy in its values, so a hit
       # still resolves out of the store-path data alone.
-      versions = builtins.mapAttrs (
-        attr: vers: builtins.mapAttrs (ver: _: fastVersion attr ver) vers
-      ) attrIndex;
+      versions =
+        builtins.mapAttrs (attr: vers: builtins.mapAttrs (ver: _: fastVersion attr ver) vers) attrIndex
+        // builtins.mapAttrs (
+          name: _: builtins.mapAttrs (ver: pick: fastVersion pick.attr ver) (canonicalPick name)
+        ) canonicalGroups;
 
       # Newest indexed version of each attribute, as of the data pin.
       #
@@ -1397,6 +1489,9 @@ rec {
       # known version resolves through fastMissing exactly as it does under
       # `versions`. That second half is pure addition: those attributes had
       # no key here at all.
+      #
+      # Raw attribute, not the canonical group — see eval `latest` for why
+      # (a merged `latest` would resolve to a sibling's prerelease).
       latest = builtins.mapAttrs newestOf (attrIndex // fastIndex);
 
       # The newest indexed revision, as fakes. Spelled as the selector it is,

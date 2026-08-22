@@ -14,6 +14,7 @@ let
 in
 {
   index = evalTest "test-index" ../tests/index.nix;
+  canonical = evalTest "test-canonical" ../tests/canonical.nix;
   flake-at = evalTest "test-flake-at" ../tests/flake-at.nix;
   installables = evalTest "test-installables" ../tests/installables.nix;
   module = evalTest "test-module" ../tests/module.nix;

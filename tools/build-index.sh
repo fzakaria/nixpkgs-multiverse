@@ -195,7 +195,7 @@ fi
 # runnable on CI, where the cache does not exist and a rebuild from an empty
 # cache would silently produce an empty index.
 python3 - "$WORK" "$EXTRACTOR_HASH" "$OUT" "$REVFILE" "$INCREMENTAL" <<'PY'
-import json, os, sys
+import json, os, re, sys
 work, ehash, out, revfile, incremental = sys.argv[1:6]
 incremental = incremental == "1"
 revs = json.load(open(revfile))
@@ -249,7 +249,21 @@ open_ended = {
     attr: {version: (None if off == tip else off) for version, off in versions.items()}
     for attr, versions in attrs.items()
 }
-json.dump({"revisionCount": covered, "attrs": open_ended}, open(out, 'w'), sort_keys=True)
+# Group versioned attributes (python314, go_1_25) under a "canonical" name so a
+# request for `python` can resolve to the freshest matching version. canonical.json
+# maps each name to regex patterns for its siblings. The name must be a real
+# attribute of its own; if it is not, that is a config mistake and we abort.
+patterns = json.load(open(os.path.join(os.path.dirname(os.path.dirname(out)), "canonical.json")))
+canonical = {}
+for name, pats in patterns.items():
+    if name not in attrs:
+        sys.exit(f"canonical.json: '{name}' has no bare attribute of the same name")
+    canonical[name] = sorted(
+        a for a in attrs if a != name and any(re.fullmatch(p, a) for p in pats)
+    )
+
+json.dump({"revisionCount": covered, "attrs": open_ended, "canonical": canonical},
+          open(out, 'w'), sort_keys=True)
 pairs = sum(len(v) for v in attrs.values())
 merged = f"{indexed} new" if incremental else f"{indexed}/{len(revs)}"
 print(f"index: {merged} revisions merged, covering {covered}/{len(revs)}, "

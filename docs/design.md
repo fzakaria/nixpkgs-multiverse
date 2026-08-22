@@ -200,6 +200,39 @@ nobody looked at.
 `releases.json` is separate and indexed by nothing: 25 release channels, each
 holding the current tip of its branch. Releases move as backports are applied, so a release is a channel, not a snapshot, and it lives outside the revision array for that reason. See [releases move, revisions do not](./nix-api.md#releases-move-revisions-do-not).
 
+## Canonical names
+
+nixpkgs splits a language runtime across a bare alias and versioned attributes
+— `go`, `go_1_25`, `go_1_26`; `python3`, `python314`, `python315`. A
+[canonical name](./nix-api.md#canonical-normalized-names) merges a family under
+one handle. `canonical.json` maps each name to the regexes matching its
+siblings; `build-index.sh` expands them against the attributes it saw and bakes
+concrete lists into `versions.json`, so the flake reads a resolved group and
+never runs a regex.
+
+The merge lives at one point. `picksFor name` returns, per version, the sibling
+that shipped it (newest revision wins; an offset tie breaks toward the longer
+attribute name, so the specific sibling beats the bare alias). Every surface
+that resolves a version reads this; every surface keyed by attribute (`planFor`
+history runs, `fastVersion` store paths) first maps through `resolveAttr`.
+Canonical support is one swap at each resolver's door, not a rewrite inside it —
+the raw per-attribute view survives as `versionsFor`. That door placement is
+what leaves snapshot and history surfaces raw: they never grew one. See
+nix-api.md for the [resulting behaviour](./nix-api.md#canonical-normalized-names).
+
+Two design choices back the rest:
+
+- **A canonical name must be a real attribute of its own** (`build-index.sh`
+  aborts otherwise), so the handle doubles as the default line. `python` works;
+  `node` cannot be a handle — only `nodejs` exists.
+- **Solve pre-resolves the sibling.** `resolveAttr` commits a canonical pin to
+  its sibling before `planFor` minimises, so minimising can't pick a
+  revision-sharing sibling behind its back.
+
+The seed set is hand-curated — `go` and `python`; `gcc`, `llvm`, `ruby`, `php`
+are the obvious next entries. Auto-detecting families is out of scope
+(false-positive risk: `python3Packages`, `libgcc`).
+
 ## Minimising
 
 Cost is per revision touched, not per package. Ten pins resolved independently
