@@ -29,6 +29,13 @@
   # vendored or locally built artifacts. When null the files are fetched from
   # the release assets data-pins.json names, verified by narHash.
   dataOverride ? null,
+  # Base fetchTree arguments for a revision. Override this function to use a
+  # mirror; rev and, for indexed revisions, narHash are added when relevant.
+  fetchTreeArgs ? rev: {
+    type = "github";
+    owner = "NixOS";
+    repo = "nixpkgs";
+  },
 }:
 
 let
@@ -191,13 +198,12 @@ let
       r = revAt i;
     in
     if r ? narHash then
-      builtins.fetchTree {
-        type = "github";
-        owner = "NixOS";
-        repo = "nixpkgs";
-        rev = r.rev;
-        inherit (r) narHash;
-      }
+      builtins.fetchTree (
+        fetchTreeArgs r.rev
+        // {
+          inherit (r) rev narHash;
+        }
+      )
     else
       throw "multiverse: revision ${labelOf i} has no narHash; re-run tools/build-index.sh";
 
@@ -291,14 +297,7 @@ let
   # commit hash is itself the lock, and fetchTree accepts it under pure
   # evaluation. That is what keeps refreshing releases.json free — it never has
   # to download a tree just to hash it.
-  pathForRelease =
-    r:
-    builtins.fetchTree {
-      type = "github";
-      owner = "NixOS";
-      repo = "nixpkgs";
-      rev = r.rev;
-    };
+  pathForRelease = r: builtins.fetchTree (fetchTreeArgs r.rev // { inherit (r) rev; });
 
   # Memoised the same way as instances, and just as lazy: naming a release
   # costs a thunk, forcing one costs a fetch.
