@@ -74,6 +74,11 @@
         default = multiverse;
       };
 
+      overlays = rec {
+        multiverse-packages = import ./nix/overlay.nix { inherit self; };
+        default = multiverse-packages;
+      };
+
       # `nix build .#site` assembles the exact tree the pages workflow
       # deploys; `nix run .#serve` serves it for testing.
       #
