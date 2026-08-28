@@ -24,6 +24,29 @@ in
   mirrors = evalTest "test-mirrors" ../tests/mirrors.nix;
   compose = (import ../tests/compose.nix { inherit system; }).env;
 
+  # That a fetched artifact survives Nix' reference scan. Real data never
+  # collides against the release pin every other check builds on — which is how
+  # the overlay shipped broken — so the collision is constructed: a file holding
+  # the bare hash part of a path in the fetch's own input closure. The
+  # assertions carry the check, because a fixed-output path is decided by name
+  # and hash alone: once built, a dropped discard would not rebuild. Regenerate
+  # the hash with `nix hash path` if the probe strings change.
+  data-refs =
+    let
+      dep = builtins.toFile "refscan-dep" "multiverse reference-scan probe\n";
+      # The reference rides the string context, which is what puts `dep` into
+      # the fetch's input closure for the scanner to find.
+      depHash = builtins.substring 0 32 (baseNameOf dep);
+      collide = builtins.toFile "refscan-collide.json" ''{"refscan-dep":{"1":["${depHash}"]}}'';
+      artifact = import ./fetch-artifact.nix { inherit pkgs; } {
+        url = "file://${collide}";
+        hash = "sha256-d6l6GfTP+VS5xZN39E4duj3ZwktbCI+eY/WnbOXYo04=";
+      };
+    in
+    assert artifact.__structuredAttrs;
+    assert artifact.unsafeDiscardReferences.out;
+    artifact;
+
   # Every in-repository markdown link, against the headings that actually exist.
   # Both renderers — GitHub and tools/render-docs.py — derive anchors from
   # heading text, so renaming a heading breaks links in both and neither says
