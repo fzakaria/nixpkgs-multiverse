@@ -16,6 +16,14 @@
 #
 # recursiveHash, because data-pins.json records the NAR hash of each file rather
 # than the flat hash of its bytes. The pins verify unchanged either way.
+#
+# unsafeDiscardReferences, because Nix scans a build's output for the bare hash
+# part of every store path in its input closure — which is what these artifacts
+# are lists of — and a fixed-output derivation may not have references at all.
+# The hashes are data, not runtime dependencies; fetchTree got that for free by
+# never being a build. Both go through derivationArgs, which fetchurl forwards
+# to mkDerivation: the discard is only honoured under __structuredAttrs, and
+# fetchurl sets that one itself only from 26.05 on.
 { pkgs }:
 let
   pins = builtins.fromJSON (builtins.readFile ../data-pins.json);
@@ -25,6 +33,10 @@ let
       url = "${pins.baseUrl}/${pin.tag}/${name}";
       hash = pin.narHash;
       recursiveHash = true;
+      derivationArgs = {
+        __structuredAttrs = true;
+        unsafeDiscardReferences.out = true;
+      };
     }
   ) pins.files;
 in
