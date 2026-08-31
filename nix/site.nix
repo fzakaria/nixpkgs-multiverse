@@ -5,12 +5,6 @@
 # that versions.json and revisions.json always deploy atomically — the offsets in
 # one are only valid against the other.
 { pkgs, self }:
-let
-  # The commit stamped into the footer. From a clean checkout self.rev names
-  # exactly the tree the data files came from; a dirty tree gets dirtyRev;
-  # anything else keeps the placeholder and the footer stays hidden.
-  commit = self.rev or self.dirtyRev or "__COMMIT__";
-in
 pkgs.runCommand "nixpkgs-multiverse-site" { } ''
   mkdir -p $out
   cp -r ${pkgs.multiverse-site-data}/* $out/
@@ -19,14 +13,11 @@ pkgs.runCommand "nixpkgs-multiverse-site" { } ''
   cp -r ${../site}/* $out/
   chmod -R u+w $out
 
-  substituteInPlace $out/js/app.js --replace-quiet "__COMMIT__" "${commit}"
-
   # The output path is known before building, so the page can name the very
   # store path it is served out of (a benign self-reference).
   substituteInPlace $out/js/app.js --replace-fail "__STORE_PATH__" "$out"
   if [ -d $out/docs ]; then
     for f in $out/docs/*.html; do
-      substituteInPlace "$f" --replace-quiet "__COMMIT__" "${commit}"
       substituteInPlace "$f" --replace-fail "__STORE_PATH__" "$out"
     done
   fi

@@ -5,7 +5,7 @@
 // views into the App component and boots the render.
 import { html, render, useState, useEffect, useMemo } from "htm/preact";
 
-import { REV_ABBREV, SHARD_ERROR, VIEWS } from "./config.js";
+import { SHARD_ERROR, VIEWS } from "./config.js";
 import { fetchJson, useStats } from "./data.js";
 import { Link, useRouter } from "./router.js";
 import { Packages } from "./views/packages.js";
@@ -138,20 +138,11 @@ const root = document.getElementById("app");
 root.textContent = "";
 render(html`<${App} />`, root);
 
-// The site build substitutes the deploying commit into BUILT_FROM and the
-// derivation's own $out into STORE_PATH, so the footer names exactly the
-// tree the data files came from and the store path serving them. A local
-// checkout still carries the placeholders, and both lines stay hidden.
-const BUILT_FROM = "__COMMIT__";
+// The site build substitutes the derivation's own $out into STORE_PATH, so
+// the footer names the store path serving the page. A local checkout still
+// carries the placeholder, and the line stays hidden.
 const STORE_PATH = "__STORE_PATH__";
-const $ = (id) => document.getElementById(id);
-if (!BUILT_FROM.startsWith("__")) {
-  $("built-sha").textContent = BUILT_FROM.slice(0, REV_ABBREV);
-  $("built-link").href =
-    `https://github.com/fzakaria/nixpkgs-multiverse/commit/${BUILT_FROM}`;
-  $("built").hidden = false;
-}
 if (!STORE_PATH.startsWith("__")) {
-  $("store-path").textContent = STORE_PATH;
-  $("store").hidden = false;
+  document.getElementById("store-path").textContent = STORE_PATH;
+  document.getElementById("store").hidden = false;
 }

@@ -18,5 +18,5 @@ pkgs.runCommand "nixpkgs-multiverse-docs"
     mkdir -p $out
     python3 ${../tools/render-docs.py} \
       ${pkgs.cmark-gfm}/bin/cmark-gfm ${../docs} $out \
-      ${siteOrigin} "__COMMIT__" "__STORE_PATH__"
+      ${siteOrigin} "__STORE_PATH__"
   ''

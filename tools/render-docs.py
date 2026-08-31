@@ -6,7 +6,7 @@ here exists to make one source work in both places: heading anchors use
 GitHub's slug algorithm, and `./page.md` links become `./page.html` on the
 way out.
 
-Usage: render-docs.py <cmark-gfm> <docs-dir> <out-dir> [origin] [commit] [store-path]
+Usage: render-docs.py <cmark-gfm> <docs-dir> <out-dir> [origin] [store-path]
 """
 
 import html
@@ -29,10 +29,6 @@ EXTENSIONS = ["table", "strikethrough", "autolink", "tasklist", "footnotes"]
 SITE_TITLE = "nixpkgs-multiverse"
 REPO = "https://github.com/fzakaria/nixpkgs-multiverse"
 GA_ID = "G-JHW37D1S4W"
-
-# How much of a commit the footer shows. site/app.js calls the same constant
-# REV_ABBREV; the two footers should abbreviate identically.
-REV_ABBREV = 12
 
 # The favicon and analytics that index.html carries, so a docs page and the
 # index look like one site in the browser tab and in reporting.
@@ -288,27 +284,16 @@ def sidebar(pages, current):
     return "\n".join(out)
 
 
-def provenance(commit, store_path):
-    """The two footer lines naming the build: the commit the pages were
-    rendered from and the store path serving them.
+def provenance(store_path):
+    """The footer line naming the store path the pages are served from.
 
-    The index browser writes these from app.js, which cannot help here — a
-    docs page runs no JavaScript — so they are stamped in. The placeholder
-    test is app.js's: a local checkout has nothing honest to say and shows
-    neither line.
+    The index browser writes the same line from app.js, which cannot help
+    here — a docs page runs no JavaScript — so the path is stamped in as a
+    placeholder the site derivation substitutes.
     """
-    out = []
-    if commit:
-        out.append(
-            f" ·\n      <span>built from\n"
-            f'        <a href="{REPO}/commit/{commit}">'
-            f"<code>{commit[:REV_ABBREV]}</code></a></span>"
-        )
-    if store_path:
-        out.append(
-            f'\n      <div id="store"><code>{html.escape(store_path)}</code></div>'
-        )
-    return "".join(out)
+    if not store_path:
+        return ""
+    return f'\n      <div id="store"><code>{html.escape(store_path)}</code></div>'
 
 
 def url_of(name):
@@ -333,7 +318,7 @@ def canonical(origin, name):
     return f'\n    <link rel="canonical" href="{origin}{url_of(name)}" />'
 
 
-def shell(title, body, nav, name, commit, store_path, origin):
+def shell(title, body, nav, name, store_path, origin):
     """The page frame: the site's own header and footer, so /docs/ reads as
     part of nixmultiverse.com rather than as a separate manual."""
     edit = f"{REPO}/blob/main/docs/{name}.md"
@@ -384,7 +369,7 @@ def shell(title, body, nav, name, commit, store_path, origin):
       Made with ❤️ by
       <a href="https://fzakaria.com">Farid Zakaria</a>
       ·
-      <a href="{REPO}/blob/main/LICENSE">MIT</a>{provenance(commit, store_path)}
+      <a href="{REPO}/blob/main/LICENSE">MIT</a>{provenance(store_path)}
     </footer>
   </body>
 </html>
@@ -393,12 +378,11 @@ def shell(title, body, nav, name, commit, store_path, origin):
 
 def main():
     cmark, docs_dir, out_dir = sys.argv[1:4]
-    # Rendering outside the site derivation — a local preview — knows none of
-    # these. The placeholders keep the footer lines off the page, and an empty
-    # origin keeps the canonical link off it.
+    # Rendering outside the site derivation — a local preview — knows neither
+    # of these. An empty origin keeps the canonical link off the page; the
+    # store-path placeholder is substituted by the site derivation.
     origin = sys.argv[4] if len(sys.argv) > 4 else ""
-    commit = sys.argv[5] if len(sys.argv) > 5 else "__COMMIT__"
-    store_path = sys.argv[6] if len(sys.argv) > 6 else "__STORE_PATH__"
+    store_path = sys.argv[5] if len(sys.argv) > 5 else "__STORE_PATH__"
     os.makedirs(out_dir, exist_ok=True)
 
     order = page_order(docs_dir)
@@ -426,9 +410,7 @@ def main():
     pages = [(n, rendered[n][2], rendered[n][1]) for n in names]
     for name in names:
         body, _, title = rendered[name]
-        page = shell(
-            title, body, sidebar(pages, name), name, commit, store_path, origin
-        )
+        page = shell(title, body, sidebar(pages, name), name, store_path, origin)
         # Flat `<name>.html` on disk, served at `/docs/<name>`. Both GitHub
         # Pages and `nix run .#serve` resolve the extensionless request onto
         # this file, so the URL a reader copies never carries `.html`.
