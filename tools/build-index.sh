@@ -62,7 +62,10 @@ FAILURES=0
 # The extraction cache is keyed by the extractor's own hash as well as the
 # revision. Without this, editing extract-versions.nix leaves every cached file
 # silently stale and a "successful" rebuild quietly reuses the old logic.
-EXTRACTOR_HASH=$(sha256sum "$NIXDIR/extract-versions.nix" | cut -c1-8)
+# tools/cache-key.sh is what build-history.sh reads the same key out of.
+# shellcheck source=cache-key.sh
+. "$HERE/cache-key.sh"
+EXTRACTOR_HASH=$(extractor_hash "$NIXDIR")
 
 # One revision: materialise it, extract {attr: version}, and record its narHash
 # beside the extraction. Deliberately touches no shared file, so that -j can run
