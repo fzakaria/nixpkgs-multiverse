@@ -53,13 +53,19 @@ in
   # heading text, so renaming a heading breaks links in both and neither says
   # so: the browser just scrolls to the top. The tree is reassembled here
   # because the checker resolves `../` links relative to the file holding them.
+  # The mini-repo carries the code a document can name as well as the prose,
+  # because a link from a document into the tree is exactly the kind that rots:
+  # docs/nix-api.md points at nix/nested-sets.nix, and a reader following that
+  # link after the file moved is worse off than one who was never offered it.
   docs-links = pkgs.runCommand "check-docs-links" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    mkdir -p repo/docs repo/.github/workflows
+    mkdir -p repo/docs repo/.github/workflows repo/nix repo/tools
     cp ${../README.md} repo/README.md
     cp ${../LICENSE} repo/LICENSE
     cp ${../multiverse_lotr.jpg} repo/multiverse_lotr.jpg
     cp ${../docs}/*.md ${../docs}/*.svg repo/docs/
     cp ${../.github/workflows}/*.yml repo/.github/workflows/
+    cp ${../nix}/*.nix repo/nix/
+    cp ${../tools}/*.sh ${../tools}/*.py repo/tools/
     cd repo
     python3 ${../tools/check-links.py} README.md docs/*.md | tee $out
   '';
