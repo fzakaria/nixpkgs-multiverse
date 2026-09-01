@@ -457,6 +457,63 @@ let
     ) offsets
   );
 
+  # An index attribute name as the path it is reached at. Most names are one
+  # step; a name from a package set listed in nix/nested-sets.nix is two —
+  # `jetbrains.idea` is the attribute `idea` of the attribute `jetbrains`, not
+  # an attribute whose name contains a dot.
+  attrPathOf = attr: builtins.filter builtins.isString (builtins.split "\\." attr);
+
+  # An index name as it has to be typed inside an attribute path. `nix build`
+  # splits an attrpath on unquoted dots, so a nested name is only addressable
+  # quoted — `versions."jetbrains.idea"` is one key, `versions.jetbrains.idea`
+  # is a lookup that fails. Every message that hands the reader a selector to
+  # type goes through this; a plain name is left bare, the way the docs spell
+  # it.
+  quotedAttr = attr: if builtins.length (attrPathOf attr) > 1 then ''"${attr}"'' else attr;
+
+  # A package set walked down one attribute name's path, or null when any step
+  # of it is missing. Recursive rather than a fold so the value at the end comes
+  # back unforced: `versionDrv` and `fastAt` both hand this out as a thunk that
+  # a caller may never look at, and forcing it here would instantiate a
+  # derivation nobody asked for.
+  #
+  # No attribute of a package set is ever null, so null is unambiguous as the
+  # not-found answer.
+  lookupAttrPath =
+    pkgs: attr:
+    let
+      walk =
+        value: path:
+        if path == [ ] then
+          value
+        else if !(builtins.isAttrs value) || !(value ? ${builtins.head path}) then
+          null
+        else
+          walk value.${builtins.head path} (builtins.tail path);
+    in
+    walk pkgs (attrPathOf attr);
+
+  # The derivation an index name points at inside one instantiated revision.
+  #
+  # The index and the tree it names can disagree — an extraction older than a
+  # change to nix/nested-sets.nix is exactly that — so this says which name and
+  # which revision rather than letting Nix report a missing attribute against a
+  # 30,000-attribute set.
+  resolveIn =
+    pkgs: attr:
+    let
+      found = lookupAttrPath pkgs attr;
+    in
+    if found == null then
+      throw ''
+        multiverse: the index has ${attr}, but ${
+          pkgs.multiverse.label or "the revision it names"
+        } does not. Re-extract that revision with tools/build-index.sh; if the index
+        and nixpkgs really do disagree, that is a bug worth reporting.
+      ''
+    else
+      found;
+
   # Every version of an attribute with the offset it resolves to, the open-ended
   # tip encoding closed. Against the index's own revisionCount rather than
   # nRevs: a revision appended since the last indexing run is one this file has
@@ -714,7 +771,7 @@ let
         }
       ''
     else
-      instances.${toString i}.${attr};
+      resolveIn instances.${toString i} attr;
 
   dataPins = builtins.fromJSON (builtins.readFile ./data-pins.json);
 
@@ -873,7 +930,7 @@ let
       # drvPath a fake cannot have, so the message says what to append.
       drvPath = throw ''
         multiverse: ${drvName} is a fast fake derivation and has no drvPath — it
-        substitutes by store path alone. Append the output: …${attr}."${ver}".out
+        substitutes by store path alone. Append the output: …${quotedAttr attr}."${ver}".out
         (outputs: ${builtins.concatStringsSep " " ([ "out" ] ++ builtins.attrNames siblings)}).
         For override / nix develop / a real derivation, use .eval instead.
       '';
@@ -903,7 +960,7 @@ let
       evalDrv = versionDrv attr ver;
     in
     if entry == null then
-      fastMissing attr ver ''versions.${attr}."${ver}"'' evalDrv
+      fastMissing attr ver ''versions.${quotedAttr attr}."${ver}"'' evalDrv
     else
       mkFake attr ver entry evalDrv;
 in
@@ -1119,7 +1176,9 @@ rec {
       throw ''
         multiverse: ${attr} is not in the history index, so there is no last sighting
         to report. Attributes without a `.version` — package sets such as `gnome3` —
-        are never indexed, and neither are nested sets like `python3Packages.*`.
+        are never indexed, and neither are the children of a package set that
+        nix/nested-sets.nix does not list: `jetbrains.idea` is there, anything under
+        `python3Packages` is not.
       ''
     else if lastOffOf newest >= checkedHistory.revisionCount - 1 then
       null
@@ -1179,7 +1238,7 @@ rec {
         )
       ) { } plan.groups;
     in
-    builtins.mapAttrs (attr: _: instances.${toString homes.${attr}}.${attr}) pins;
+    builtins.mapAttrs (attr: _: resolveIn instances.${toString homes.${attr}} attr) pins;
 
   # The same plan `solvePins` builds, as data rather than as derivations:
   #
@@ -1215,17 +1274,19 @@ rec {
         attr: pin:
         let
           pkgs = at pin.rev;
+          found = if pin ? rev then lookupAttrPath pkgs attr else null;
         in
         if !(pin ? rev) then
           throw "multiverse: the pin for ${attr} in ${toString file} has no `rev`"
-        else if !(pkgs ? ${attr}) then
+        else if found == null then
           throw ''
             multiverse: ${attr} is pinned to ${pin.rev} but that revision has no such
-            attribute. Only top-level attributes can be pinned — nested sets like
-            python3Packages.* are not in the index and cannot be named in a lock file.
+            attribute. A pin names an indexed attribute: every top-level one, plus the
+            children of the package sets nix/nested-sets.nix lists — `jetbrains.idea`
+            is pinnable, `python3Packages.requests` is not.
           ''
         else
-          pkgs.${attr};
+          found;
     in
     if (lock.version or null) != lockVersion then
       throw ''
@@ -1344,7 +1405,7 @@ rec {
             let
               ver = versionAt attr sel;
               entry = if ver == null then null else fastEntryFor attr ver;
-              evalDrv = (at sel).${attr};
+              evalDrv = resolveIn (at sel) attr;
             in
             if ver == null then
               throw "multiverse: the history index has no version of ${attr} at ${sel}"

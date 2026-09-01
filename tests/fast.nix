@@ -36,6 +36,25 @@ let
     fetchArtifact = { name, ... }: ../tests/fixtures/fast-data + "/${name}";
   };
 
+  # A fixture entry under a nested index name — a child of a package set
+  # nix/nested-sets.nix lists. Only the fixture carries it, since the committed
+  # index has no nested attributes until it is re-extracted, so it is reachable
+  # through `fast.latest`, which unions the store-path index's keys in, and not
+  # through `fast.versions`, which is keyed by the eval index alone.
+  #
+  # What this pins down is that a dotted name is one key holding a dot rather
+  # than two levels of attrset — the distinction every fast selector rests on.
+  nestedFake = mv.fast.latest."jetbrains.idea";
+  nestedKeyed = nestedFake.name == "idea-2024.1" && nestedFake.version == "2024.1";
+
+  # `fast.latest` is a flat attrset, so the dotted name is a key of it and the
+  # set has no `jetbrains` of its own to descend into.
+  nestedFlat = !(mv.fast.latest ? jetbrains);
+
+  # A fake under a nested name is a fake like any other: no drvPath, and the
+  # outputs it does have hang off it directly.
+  nestedDrvPathThrows = !(builtins.tryEval nestedFake.drvPath).success;
+
   # The importer knob under test: unmatched pairs fall back to the real
   # derivation instead of throwing.
   mvEval = import ../multiverse.nix {
@@ -184,6 +203,15 @@ assert unfreeKeyed;
 assert unfreeThrows;
 assert unfreeLatestKeyed;
 assert unfreeLatestThrows;
+
+# A nested index name — a child of a package set nix/nested-sets.nix lists — is
+# one flat key of the index holding a dot, not two levels of it. Every fast
+# selector is keyed that way, and the selector a fake suggests has to be
+# spelled so it parses: `nix build` splits an attribute path on unquoted dots,
+# so the attribute needs quoting exactly the way the version already does.
+assert nestedKeyed;
+assert nestedFlat;
+assert nestedDrvPathThrows;
 
 # The union must not disturb the attributes the store-path index does cover:
 # `latest` still means the newest version with a path, which for an attribute

@@ -35,6 +35,15 @@ assert builtins.all (
   p != null && inst ? ${builtins.elemAt p 0} && inst.${builtins.elemAt p 0} ? ${builtins.elemAt p 1}
 ) mv.releases;
 
+# A revision selector resolves to a real nixpkgs rather than to anything keyed
+# by the index, which is the one place a name the index spells `jetbrains.idea`
+# is genuinely two attributes. Every index-keyed tree — `versions`, `latest`,
+# all of `fast` — holds it as a single key instead, and the two spellings are
+# not interchangeable in either direction.
+assert mv.tip ? jetbrains;
+assert mv.tip.jetbrains ? idea;
+assert !(mv.tip ? "jetbrains.idea");
+
 # Every revision is addressable by full commit and 12-character prefix...
 assert builtins.all (r: inst ? ${r.rev} && inst ? ${builtins.substring 0 12 r.rev}) mv.revisions;
 

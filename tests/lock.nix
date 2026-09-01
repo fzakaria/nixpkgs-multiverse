@@ -52,6 +52,22 @@ let
     definitely-not-a-package = pin;
   });
 
+  # A pin naming a nested attribute. nix/nested-sets.nix puts `jetbrains` in the
+  # index, so an attribute name can be a path, and resolving one has to walk it
+  # rather than ask nixpkgs for an attribute whose name contains a dot.
+  # `jetbrains.jdk` is free and lives in the revision the pins above already
+  # materialise, so testing it costs no second fetch.
+  nested = mv.readLock (lockFile {
+    "jetbrains.jdk" = pin;
+  });
+
+  # A path whose set exists and whose child does not. This is the case that
+  # would silently read as "missing attribute" if the walk stopped checking
+  # after the first step.
+  nestedMissing = mv.readLock (lockFile {
+    "jetbrains.definitely-not-an-ide" = pin;
+  });
+
   # A lock from a future format version. Rejected whole, before any pin is
   # looked at, since a reader that guesses at an unknown format is worse than
   # one that stops.
@@ -88,6 +104,15 @@ assert
 # An attribute the revision does not have is an error, not a null.
 assert !(attempt missing "definitely-not-a-package");
 
+# A dotted name resolves to the package at that path, not to a missing
+# attribute — and reports the version the tree carries, so the walk really did
+# reach a derivation.
+assert nested."jetbrains.jdk" ? version;
+assert builtins.match "jetbrains-jdk-.*" nested."jetbrains.jdk".name != null;
+
+# A missing child of a set that does exist is an error too.
+assert !(attempt nestedMissing "jetbrains.definitely-not-an-ide");
+
 # An unreadable format version is refused.
 assert !future.success;
 
@@ -98,4 +123,5 @@ assert mv.readLock (lockFile { }) == { };
   inherit label rev;
   pins = builtins.attrNames good;
   version = good.ripgrep.version;
+  nestedVersion = nested."jetbrains.jdk".version;
 }
