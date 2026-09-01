@@ -1,5 +1,7 @@
 # The root attrset nix-eval-jobs walks to get {attr -> output -> store path}
-# for a single vendored revision, at one explicit system.
+# for a single vendored revision, at one explicit system. Top-level attributes,
+# plus the children of the package sets nix/nested-sets.nix lists, keyed the way
+# the version index keys them: `jetbrains.idea`.
 #
 # This is the evaluation half of the inverted join in docs/store-paths.md.
 # The channel's
@@ -53,20 +55,36 @@ let
       in
       if attempt.success then attempt.value else [ ];
 
-  # Top-level derivations only, and the filter runs in the worker that forces
-  # the attribute rather than here. Anything that is not a derivation becomes
-  # an empty attrset, which nix-eval-jobs neither reports nor recurses into:
-  # that is what keeps `haskellPackages` and friends — every one of which sets
-  # recurseForDerivations — out of a run that asked for top-level attributes.
+  # The package sets whose children the version index carries, so their store
+  # paths have to be resolved too. The same list nix/extract-versions.nix walks:
+  # a set indexed there and skipped here would have versions and no digests, and
+  # every `fast.*` on it would fall back to an evaluation.
+  nestedSets = import ./nested-sets.nix;
+
+  # A value handed to nix-eval-jobs, or an empty attrset when it is not one to
+  # report. An empty attrset is neither reported nor recursed into, which is
+  # what keeps `haskellPackages` and friends — every one of which sets
+  # recurseForDerivations — out of a run that did not ask for them.
+  projectDrv = v: if builtins.isAttrs v && (v.type or "") == "derivation" then v else { };
+
+  # Derivations, plus the listed package sets one level deep. The filter runs in
+  # the worker that forces the attribute rather than here, so listing the root
+  # still costs nothing.
   #
-  # A nested pass would want the value handed over unwrapped instead. Not
-  # wired up: nothing indexes nested attributes yet.
+  # A listed set is handed over with its children projected the same way and the
+  # marker nix-eval-jobs recurses on, so its workers report them as
+  # `<set>.<child>` — exactly the key the version index uses. Projecting the
+  # children is what holds the walk to one level: a set inside a listed set
+  # becomes an empty attrset rather than another level to descend.
   project =
     n:
     let
       v = pkgs.${n};
     in
-    if (v.type or "") == "derivation" then v else { };
+    if builtins.isAttrs v && (v.type or "") != "derivation" && builtins.elem n nestedSets then
+      builtins.mapAttrs (_: projectDrv) v // { recurseForDerivations = true; }
+    else
+      projectDrv v;
 in
 builtins.listToAttrs (
   map (n: {

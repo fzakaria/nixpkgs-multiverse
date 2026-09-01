@@ -100,8 +100,11 @@ mkdir -p "$WORK"
 
 # The cache is keyed by the evaluator's own hash as well as by revision and
 # system. Without it, editing eval-outpaths.nix leaves every cached file
-# silently stale and a "successful" rerun quietly reuses the old logic.
-EVALUATOR_HASH=$(sha256sum "$NIXDIR/eval-outpaths.nix" | cut -c1-8)
+# silently stale and a "successful" rerun quietly reuses the old logic. The
+# package-set list counts as part of the evaluator; see tools/cache-key.sh.
+# shellcheck source=cache-key.sh
+. "$HERE/cache-key.sh"
+EVALUATOR_HASH=$(evaluator_hash "$NIXDIR")
 export EVALUATOR_HASH
 
 # One (revision, system): walk every top-level attribute of a materialised
