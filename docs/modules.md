@@ -40,8 +40,11 @@ An attribute claimed by more than one of `pins`, `lock` and
 of `buildEnv`: each side would resolve to a different derivation of the same
 package.
 
-**Note**: Only top-level attributes work. Nested sets such as `python3Packages.*`,
-or `nodePackages.*` are not in the index and cannot be used.
+**Note**: Only indexed attributes work — every top-level one, plus the children
+of the few package sets [`nix/nested-sets.nix`](../nix/nested-sets.nix) lists,
+named by their path: `jetbrains.idea`. The large sets are deliberately not in
+the index, so `python3Packages.*` and `nodePackages.*` cannot be used. See
+[building the index](./building-the-index.md#indexing-a-nested-package-set).
 
 ### How many nixpkgs your pins cost
 

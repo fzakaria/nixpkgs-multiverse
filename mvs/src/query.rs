@@ -102,7 +102,9 @@ pub fn unknown_attr(index: &Index, attr: &str) -> Result<anyhow::Error> {
 
     Ok(anyhow!(
         "{attr} is not in the index. Only attributes with a `.version` are indexed — package \
-         sets such as `gnome3`, and nested sets like `python3Packages.*`, never are.{suggestion}"
+         sets such as `gnome3` never are. Nested attributes are indexed by path, but only \
+         for the sets nix/nested-sets.nix lists: `jetbrains.idea` is there, \
+         `python3Packages.requests` is not.{suggestion}"
     ))
 }
 

@@ -130,6 +130,15 @@ revision that shipped it:
 `revisionCount - 1`, and it is how the file says a version is _still current_.
 See [the open tip](#the-open-tip) for why it is not written out.
 
+An attribute key is usually a top-level attribute name, and is otherwise the
+path to a child of one of the few package sets
+[`nix/nested-sets.nix`](../nix/nested-sets.nix) lists — `jetbrains.idea`.
+Readers walk that path rather than asking nixpkgs for an attribute whose name
+contains a dot. The list is an allow-list because nixpkgs marks 285 package
+sets `recurseForDerivations` and they hold 74,000 children between them, three
+times the rest of the index; see
+[building the index](./building-the-index.md#indexing-a-nested-package-set).
+
 Storing one integer rather than every revision a version appeared in is what
 keeps the file flat as revisions accumulate; otherwise a package that never
 changes version gains an entry per revision forever. Measured across encodings

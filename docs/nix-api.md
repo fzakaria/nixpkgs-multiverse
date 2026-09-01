@@ -32,6 +32,40 @@ $ nix shell github:fzakaria/nixpkgs-multiverse#967d40bec14b.python3
 $ nix shell github:fzakaria/nixpkgs-multiverse#967d40bec14be87262b21ab901dbace23b7365db.python3
 ```
 
+## Nested attributes are one key
+
+Most index names are top-level attributes. The children of the few package sets
+[`nix/nested-sets.nix`](../nix/nested-sets.nix) lists are indexed as well, under
+the path they are reached at — `jetbrains.idea`.
+
+That name is **one key of a flat attrset**, not two levels of one. `nix` splits
+an attribute path on unquoted dots, so the name has to be quoted, exactly the
+way a version string already is:
+
+```console
+$ nix run 'github:fzakaria/nixpkgs-multiverse#versions."jetbrains.idea"."2024.1"'
+$ nix build 'github:fzakaria/nixpkgs-multiverse#versions."jetbrains.idea"."2024.1".out'
+$ nix shell 'github:fzakaria/nixpkgs-multiverse#latest."jetbrains.idea"'
+$ nix shell 'github:fzakaria/nixpkgs-multiverse#fast.latest."jetbrains.idea"'
+```
+
+Written unquoted, `versions.jetbrains.idea."2024.1"` asks for a `jetbrains`
+attribute of `versions`, which is not there, and nix reports that the flake does
+not provide the attribute. Outputs and `.eval` come after the quoted segments
+and are never quoted themselves: they are ordinary attributes of the derivation
+the path resolved to.
+
+The revision selectors are the exception, because they are not keyed by the
+index at all. `tip`, a release, a commit and a label each resolve to a real
+nixpkgs, where `jetbrains.idea` genuinely is two attributes:
+
+```console
+$ nix run github:fzakaria/nixpkgs-multiverse#tip.jetbrains.idea
+```
+
+`fast.tip` and `fast.at` are index-keyed despite the shared name, so they take
+the quoted spelling that `tip` does not.
+
 Query the flake for all the versions of a package that **ever existed in Nixpkgs**.
 
 ```console
