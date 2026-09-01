@@ -34,7 +34,7 @@ Questions, ideas, and "does it handle X?" are welcome in the
 
 <!-- BEGIN index-status -->
 
-- **307,607 package versions** across **32,043 attributes**, from **1,541 revisions**
+- **309,180 package versions** across **32,084 attributes**, from **1,541 revisions**
 - 2012-07-05 → 2026-08-31, newest [`34ab99075ac4`](https://github.com/NixOS/nixpkgs/commit/34ab99075ac4f7e40cf037eef32cb1c360bb85e9) · [`nixos-26.11pre1064949`](https://releases.nixos.org/?prefix=nixos/unstable/nixos-26.11pre1064949.34ab99075ac4/)
 <!-- END index-status -->
 
