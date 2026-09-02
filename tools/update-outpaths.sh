@@ -103,7 +103,20 @@ if [ "$MODE" = full ]; then
 else
   OFFSETS="$MINOFF:"
 fi
-bash "$HERE/eval-outpaths.sh" --offsets "$OFFSETS" --system "$SYSTEMS"
+#    A full run reaches back to 2012 and meets revisions that cannot be
+#    evaluated for every published system at all — aarch64-darwin does not
+#    exist before 2021, and a 2017 nixpkgs has no way to produce it. That is a
+#    permanent gap in the data, not a failure of the run, and the join simply
+#    finds no evaluation for those pairs. An incremental run is held to the
+#    stricter standard: it evaluates revisions that landed days ago, where a
+#    failure is a bug to look at rather than history being what it is.
+if ! bash "$HERE/eval-outpaths.sh" --offsets "$OFFSETS" --system "$SYSTEMS"; then
+  if [ "$MODE" != full ]; then
+    echo "update-outpaths: evaluation failed; refusing to join a partial set" >&2
+    exit 1
+  fi
+  echo "update-outpaths: some (revision, system) pairs did not evaluate; joining what did"
+fi
 
 # 3. Join evaluations against listings, one set of artifacts per system.
 #    Incremental hands the join the previously published files, so every pair
