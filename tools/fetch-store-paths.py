@@ -37,7 +37,9 @@ import lzma
 import os
 import pickle
 import re
+import ssl
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -47,6 +49,14 @@ STORE_PREFIX = "/nix/store/"
 DIGEST_LEN = 32
 USER_AGENT = "nixpkgs-multiverse"
 TIMEOUT_SECONDS = 120
+# Attempts per URL, and the first gap between them — each retry waits twice as
+# long as the one before. The listings sit on S3 behind a CDN and a backfill
+# asks for 1,532 of them at once, so a handful failing the TLS handshake is an
+# ordinary afternoon. It used to cost the whole run: one failure here exits
+# non-zero, and update-outpaths.sh runs under `set -e`, so four timeouts out of
+# 1,532 discarded every listing fetched before them.
+FETCH_ATTEMPTS = 4
+RETRY_BACKOFF_SECONDS = 1.5
 # What fetch() reports for a bump whose listing the archive has not uploaded
 # yet. Distinct from a failure: the run carries on and exits zero.
 UNPUBLISHED = "no listing published yet"
@@ -109,9 +119,29 @@ def parse_manifest(text):
 
 
 def get(url):
+    """One URL's bytes, retried through transient failures.
+
+    A client error is an answer rather than a failure and is raised on the
+    first attempt: fetch() reads 404 as "this bump spells its listing
+    differently" and walks a fallback chain on it, so retrying one would turn
+    every pre-2017 revision into four pointless round trips. A timed-out
+    handshake, a reset connection or a 5xx is the network being the network,
+    and is worth asking again.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as r:
-        return r.read()
+    for attempt in range(FETCH_ATTEMPTS):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                raise
+            last = e
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ssl.SSLError) as e:
+            last = e
+        if attempt + 1 < FETCH_ATTEMPTS:
+            time.sleep(RETRY_BACKOFF_SECONDS * 2**attempt)
+    raise last
 
 
 def digests_path(outdir, off):

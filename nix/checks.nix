@@ -137,6 +137,14 @@ in
     PY
   '';
 
+  # The retry in tools/fetch-store-paths.py, with the transport stubbed — see
+  # tests/fetch-retry.py for what the policy is and why it is worth pinning.
+  # The script is passed by store path rather than found relative to the test,
+  # since under `nix build` the two arrive as separate store paths.
+  fetch-retry = pkgs.runCommand "check-fetch-retry" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/fetch-retry.py} ${../tools/fetch-store-paths.py} | tee $out
+  '';
+
   # The browser suite over the built site. Everything else here is a pure build;
   # this one is not, and cannot be: the page imports Preact from jsdelivr at run
   # time, so a sandboxed build has no way to render it at all. __noChroot is what
