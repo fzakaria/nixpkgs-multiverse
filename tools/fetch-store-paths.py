@@ -137,7 +137,12 @@ def get(url):
             if e.code < 500:
                 raise
             last = e
-        except (urllib.error.URLError, TimeoutError, ConnectionError, ssl.SSLError) as e:
+        except (
+            urllib.error.URLError,
+            TimeoutError,
+            ConnectionError,
+            ssl.SSLError,
+        ) as e:
             last = e
         if attempt + 1 < FETCH_ATTEMPTS:
             time.sleep(RETRY_BACKOFF_SECONDS * 2**attempt)
