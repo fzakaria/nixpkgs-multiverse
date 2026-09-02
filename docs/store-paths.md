@@ -199,6 +199,49 @@ one: 1,536 revisions × 3 systems, at roughly 20 (revision, system) pairs a
 minute on a 256-core machine running 20 revisions at once. Adding a system is
 that run for the new system alone.
 
+## Adding a package set costs seconds, not hours
+
+Each evaluation is cached as
+`index/.eval/<rev>.<system>.<evaluator>-<list>.json`, and the two halves of
+that key are there because the two inputs differ in what changing them can do.
+
+`nix/nested-sets.nix` is read in exactly one branch of the evaluator, one that
+fires only for the attribute it names, and that attribute reported nothing
+before it was listed — a package set is a non-derivation attrset, which
+projects to `{}` and is neither reported nor recursed into. So adding a set can
+only **add** rows. It cannot move or drop one, which means every row already on
+disk is still exactly right.
+
+`nix/eval-outpaths.nix` carries no such guarantee. Flip `allowUnfree` in the
+config it hands nixpkgs and thousands of rows ought to vanish; a cached file
+that kept them looks entirely plausible and names builds nobody makes.
+
+So a list edit does not need the pipeline re-run. `eval-outpaths.sh --topup`
+evaluates the listed sets alone and folds their rows into the evaluation
+already on disk:
+
+```sh
+NIXPKGS=/path/to/nixpkgs nix run .#eval-outpaths -- --topup -j 40
+```
+
+It replaces the nested rows rather than appending to them, so removing a set
+from the list drops the rows it used to contribute — an append would leave
+those behind forever. It refuses to run when the evaluator half of the key has
+moved as well, since then the carried-over rows are the thing in question;
+`--assume-additive` overrides that for a change you have checked yourself.
+
+The difference is the whole reason the key has two halves. Measured on one
+revision at x86_64-linux: **52 seconds** to evaluate the top level, **3 seconds**
+to evaluate `jetbrains` alone, and the merged file is byte-identical to the one
+the full pass produces. Across 1,541 revisions and 3 systems that is about 20
+minutes against about 3 hours.
+
+`tools/merge-nested-eval.py` does the fold and is where the correctness lives:
+it refuses a base and a nested run that disagree about the revision or the
+system, and refuses a nested run that reported a bare top-level name, since
+either would quietly corrupt the file the join reads. `checks.topup-merge`
+covers all three.
+
 ## Credits
 
 The fake-derivation technique that turns these digests into installables —

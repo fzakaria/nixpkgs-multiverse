@@ -29,6 +29,17 @@
 #   tools/eval-outpaths.sh -n 5                   first 5 revisions (smoke test)
 #   tools/eval-outpaths.sh -j 8                   that many revisions at once
 #   tools/eval-outpaths.sh --workers 4 --max-memory 4096
+#   tools/eval-outpaths.sh --topup               fold the listed package sets
+#                                                into existing evaluations
+#
+# --topup is for the case where nix/nested-sets.nix gained or lost a set and
+# nothing else changed. Adding a set can only add rows to an evaluation — the
+# list is read in one branch, which fires for one attribute, which reported
+# nothing before — so the rows already on disk are still exactly right and
+# re-deriving them costs 52 seconds a file against 3. It refuses to run when
+# the evaluator half of the key has moved too, since then the old rows are the
+# thing in question; --assume-additive overrides that for a change you have
+# checked by hand.
 set -euo pipefail
 
 # Data lives in the checkout, code lives next to this script. Under `nix run`
@@ -70,6 +81,11 @@ MAXMEM="${EVAL_MAXMEM:-3072}"
 # resolves 16,859 attributes on one machine and none on another. An explicit
 # ceiling makes coverage a property of nixpkgs, not of the runner.
 CALLDEPTH="${EVAL_CALLDEPTH:-100000}"
+# Fold the listed package sets into the evaluations already on disk instead of
+# re-running them whole. See the header, and tools/cache-key.sh for when it is
+# safe.
+TOPUP="${EVAL_TOPUP:-0}"
+ASSUME_ADDITIVE="${EVAL_ASSUME_ADDITIVE:-0}"
 SUBCOMMAND=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -79,6 +95,8 @@ while [ $# -gt 0 ]; do
     -j) JOBS="${2:-1}"; shift 2 ;;
     --workers) WORKERS="$2"; shift 2 ;;
     --max-memory) MAXMEM="$2"; shift 2 ;;
+    --topup) TOPUP=1; shift ;;
+    --assume-additive) ASSUME_ADDITIVE=1; shift ;;
     # Internal: how -j hands one revision to a child invocation.
     --eval-one) SUBCOMMAND=eval-one; EVAL_SHA="$2"; EVAL_LABEL="$3"; shift 3 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
@@ -88,7 +106,9 @@ EVAL_SYSTEM="$SYSTEM"
 EVAL_WORKERS="$WORKERS"
 EVAL_MAXMEM="$MAXMEM"
 EVAL_CALLDEPTH="$CALLDEPTH"
-export EVAL_SYSTEM EVAL_WORKERS EVAL_MAXMEM EVAL_CALLDEPTH
+EVAL_TOPUP="$TOPUP"
+EVAL_ASSUME_ADDITIVE="$ASSUME_ADDITIVE"
+export EVAL_SYSTEM EVAL_WORKERS EVAL_MAXMEM EVAL_CALLDEPTH EVAL_TOPUP EVAL_ASSUME_ADDITIVE
 
 if ! command -v nix-eval-jobs >/dev/null 2>&1; then
   echo "eval-outpaths: nix-eval-jobs is not on PATH." >&2
@@ -100,19 +120,110 @@ mkdir -p "$WORK"
 
 # The cache is keyed by the evaluator's own hash as well as by revision and
 # system. Without it, editing eval-outpaths.nix leaves every cached file
-# silently stale and a "successful" rerun quietly reuses the old logic. The
-# package-set list counts as part of the evaluator; see tools/cache-key.sh.
+# silently stale and a "successful" rerun quietly reuses the old logic. The key
+# has two halves, evaluator and package-set list, so that a program can tell
+# which of them moved; tools/cache-key.sh is where that is spelled out.
 # shellcheck source=cache-key.sh
 . "$HERE/cache-key.sh"
 EVALUATOR_HASH=$(evaluator_hash "$NIXDIR")
-export EVALUATOR_HASH
+EVAL_KEY=$(eval_key "$NIXDIR")
+export EVALUATOR_HASH EVAL_KEY
+
+# The newest full evaluation on disk for one (revision, system), whatever key
+# it was written under, or nothing. Newest-by-mtime is the rule
+# join-eval-listing.py already reads these files by, so a top-up folds into the
+# same file the join would have used.
+newest_eval() {
+  local sha=$1 system=$2 f
+  f=$(ls -t "$WORK/$sha.$system."*.json 2>/dev/null | grep -v '\.errors\.json$' | head -1) || true
+  printf '%s' "$f"
+}
+
+# One (revision, system) topped up: evaluate only the package sets
+# nix/nested-sets.nix names, and fold their rows into the full evaluation
+# already on disk.
+#
+# The nested rows are replaced rather than appended, so one operation covers
+# every edit to the list — a set removed from it loses the rows it used to
+# contribute, which an append would leave behind forever.
+topup_system() {
+  local sha=$1 label=$2 system=$3 src=$4
+  local dest="$WORK/$sha.$system.$EVAL_KEY.json"
+  local base baseKey start=$SECONDS
+
+  if [ -s "$dest" ]; then
+    echo "  $label $system: cached"
+    return 0
+  fi
+
+  # A (revision, system) with no evaluation at all is a skip rather than a
+  # failure: aarch64-darwin cannot be evaluated from a nixpkgs older than 2021
+  # at all, so a full-range top-up meets hundreds of these and an exit code
+  # that counted them would never mean anything. A run against a cache that is
+  # simply empty says so on every line instead.
+  base=$(newest_eval "$sha" "$system")
+  if [ -z "$base" ]; then
+    echo "  $label $system: skipped, no evaluation to top up"
+    return 0
+  fi
+
+  # The evaluator half of the base file's key. A file written before the key
+  # was split carries one hash and no dash, so its whole key is compared —
+  # which will not match, and that is correct: it was produced by a different
+  # evaluator.
+  baseKey=$(basename "$base" .json); baseKey=${baseKey##*.}
+  if [ "${baseKey%%-*}" != "$EVALUATOR_HASH" ] && [ "$ASSUME_ADDITIVE" -eq 0 ]; then
+    echo "  $label $system: base was built by evaluator ${baseKey%%-*}, not $EVALUATOR_HASH — refusing"
+    return 1
+  fi
+
+  # Only the listed sets. `attrs` takes a Nix expression, so the list is read
+  # from the same file the key is computed over rather than spelled again here.
+  if ! nix-eval-jobs \
+      --workers "$WORKERS" --max-memory-size "$MAXMEM" --no-instantiate \
+      --option max-call-depth "$CALLDEPTH" \
+      --arg revPath "$src" --argstr system "$system" \
+      --arg attrs "import $NIXDIR/nested-sets.nix" \
+      "$NIXDIR/eval-outpaths.nix" > "$dest.jsonl" 2> "$dest.err"; then
+    rm -f "$dest.jsonl"
+    echo "  $label $system: TOPUP FAILED ($((SECONDS - start))s): $(grep -m1 -o 'error:.*' "$dest.err" | head -c 55)"
+    return 1
+  fi
+
+  python3 "$HERE/reduce-eval-jobs.py" \
+    --jobs "$dest.jsonl" --rev "$sha" --system "$system" \
+    --out "$dest.nested" --errors "$dest.nested.errors" > /dev/null
+
+  if ! python3 "$HERE/merge-nested-eval.py" \
+      --base "$base" --nested "$dest.nested" --out "$dest.merged" \
+      --base-errors "${base%.json}.errors.json" \
+      --nested-errors "$dest.nested.errors" \
+      --out-errors "$WORK/$sha.$system.$EVAL_KEY.errors.json" > "$dest.count"; then
+    rm -f "$dest.jsonl" "$dest.err" "$dest.nested" "$dest.nested.errors" "$dest.merged" "$dest.count"
+    echo "  $label $system: MERGE FAILED"
+    return 1
+  fi
+
+  # Named last, so an interrupted top-up leaves no file the join would read as
+  # a finished one.
+  mv "$dest.merged" "$dest"
+  rm -f "$dest.jsonl" "$dest.err" "$dest.nested" "$dest.nested.errors"
+  echo "  $label $system: topped up to $(cat "$dest.count") in $((SECONDS - start))s"
+  rm -f "$dest.count"
+  return 0
+}
 
 # One (revision, system): walk every top-level attribute of a materialised
 # source and reduce the run to the per-revision file.
 eval_system() {
   local sha=$1 label=$2 system=$3 src=$4
-  local dest="$WORK/$sha.$system.$EVALUATOR_HASH.json"
+  local dest="$WORK/$sha.$system.$EVAL_KEY.json"
   local start=$SECONDS
+
+  if [ "$TOPUP" -eq 1 ]; then
+    topup_system "$sha" "$label" "$system" "$src"
+    return $?
+  fi
 
   if [ -s "$dest" ]; then
     echo "  $label $system: cached"
@@ -136,7 +247,7 @@ eval_system() {
 
   python3 "$HERE/reduce-eval-jobs.py" \
     --jobs "$dest.jsonl" --rev "$sha" --system "$system" \
-    --out "$dest" --errors "$WORK/$sha.$system.$EVALUATOR_HASH.errors.json" \
+    --out "$dest" --errors "$WORK/$sha.$system.$EVAL_KEY.errors.json" \
     > "$dest.count"
   # The raw run is worth keeping only while it is unreduced: the JSONL is a
   # few hundred MB across a backfill and the stderr trace is larger still, and
@@ -160,7 +271,7 @@ eval_one() {
   # difference between a resumed backfill costing a stat and costing a
   # download.
   for system in ${SYSTEM//,/ }; do
-    [ -s "$WORK/$sha.$system.$EVALUATOR_HASH.json" ] || wanted=1
+    [ -s "$WORK/$sha.$system.$EVAL_KEY.json" ] || wanted=1
   done
   if [ "$wanted" -eq 0 ]; then
     echo "  $label: cached"
@@ -215,7 +326,11 @@ for part in '$OFFSETS'.split(','):
 if $LIMIT: sel = sel[:$LIMIT]
 for i, r in sel: print(r['rev'], f\"{i}:{r['date']}\")
 ")
-echo "evaluating ${#TARGETS[@]} revisions   systems=$SYSTEM evaluator=$EVALUATOR_HASH"
+if [ "$TOPUP" -eq 1 ]; then
+  echo "topping up ${#TARGETS[@]} revisions   systems=$SYSTEM   key=$EVAL_KEY"
+else
+  echo "evaluating ${#TARGETS[@]} revisions   systems=$SYSTEM   key=$EVAL_KEY"
+fi
 
 FAILURES=0
 if [ "$JOBS" -gt 1 ]; then

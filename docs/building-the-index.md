@@ -87,6 +87,19 @@ repository's growth from ~770 KB per index commit to ~2.9 MB.
    reading one package set costs ~0.4s against the ~8.6s the top-level pass
    already spends.
 
+5. Top up the store paths. The version index and the store-path index are
+   built by different evaluators, so the new attributes have versions and no
+   digests until the second one has seen them — every `fast.*` on one falls
+   back to an evaluation until it does. This does **not** need the store-path
+   pipeline re-run: a list edit can only add rows, so the existing evaluations
+   are folded rather than redone, which is seconds a file instead of a minute.
+   See [adding a package set costs seconds, not
+   hours](./store-paths.md#adding-a-package-set-costs-seconds-not-hours).
+
+   ```sh
+   NIXPKGS=/path/to/nixpkgs nix run .#eval-outpaths -- --topup -j 40
+   ```
+
 Entries are effectively permanent. Once an attribute has a version history,
 removing its set makes it read downstream as a package that left nixpkgs, which
 is what `mvs query last-seen` and the site's timeline will tell people.
