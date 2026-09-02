@@ -55,7 +55,7 @@ them, as of 2026-08-16.
 ## Lazy trees
 
 `flake.nix` has `inputs = { }` on purpose, and that is the whole design in one
-line: `flake.nix` realls is a function `outputs = f(inputs)` where the inputs
+line: `flake.nix` really is a function `outputs = f(inputs)` where the inputs
 are resolved from a lock file `flake.lock`.
 However, nothing what this repository's flake can reach is **an input**, so **nothing is eager**.
 
