@@ -53,12 +53,15 @@ in
   # heading text, so renaming a heading breaks links in both and neither says
   # so: the browser just scrolls to the top. The tree is reassembled here
   # because the checker resolves `../` links relative to the file holding them.
-  # The mini-repo carries the code a document can name as well as the prose,
-  # because a link from a document into the tree is exactly the kind that rots:
+  # The mini-repo carries everything a document can name, not just the prose:
+  # the code, because a link into the tree is exactly the kind that rots —
   # docs/nix-api.md points at nix/nested-sets.nix, and a reader following that
-  # link after the file moved is worse off than one who was never offered it.
+  # after the file moved is worse off than one never offered the link — and the
+  # data files, which docs/design.md links to so a reader can go and look at the
+  # shapes it describes. Those cost a rebuild whenever the index moves, which is
+  # a second, and buys the same guarantee for the same reason.
   docs-links = pkgs.runCommand "check-docs-links" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    mkdir -p repo/docs repo/.github/workflows repo/nix repo/tools
+    mkdir -p repo/docs repo/.github/workflows repo/nix repo/tools repo/index
     cp ${../README.md} repo/README.md
     cp ${../LICENSE} repo/LICENSE
     cp ${../multiverse_lotr.jpg} repo/multiverse_lotr.jpg
@@ -66,6 +69,10 @@ in
     cp ${../.github/workflows}/*.yml repo/.github/workflows/
     cp ${../nix}/*.nix repo/nix/
     cp ${../tools}/*.sh ${../tools}/*.py repo/tools/
+    cp ${../revisions.json} repo/revisions.json
+    cp ${../releases.json} repo/releases.json
+    cp ${../data-pins.json} repo/data-pins.json
+    cp ${../index}/*.json repo/index/
     cd repo
     python3 ${../tools/check-links.py} README.md docs/*.md | tee $out
   '';

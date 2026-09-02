@@ -55,7 +55,9 @@ them, as of 2026-08-16.
 ## Lazy trees
 
 `flake.nix` has `inputs = { }` on purpose, and that is the whole design in one
-line. Nothing this flake can reach is an input, so nothing is eager.
+line: `flake.nix` really is a function `outputs = f(inputs)` where the inputs
+are resolved from a lock file `flake.lock`.
+However, nothing what this repository's flake can reach is **an input**, so **nothing is eager**.
 
 Revisions are fetched with `builtins.fetchTree`, pinned by `narHash`, at the
 moment a derivation is forced and not before:
@@ -64,8 +66,8 @@ moment a derivation is forced and not before:
 fetchRevision r      # defaults to builtins.fetchTree { type = "github"; ... }
 ```
 
-`fetchRevision` receives the record naming the revision and returns a
-`builtins.fetchTree` result; a deployment behind a mirror returns a fetcher of
+Multiverse expopses `fetchRevision` which receives the record naming the revision and returns a
+`builtins.fetchTree` result. For a deployment behind a mirror, one can specify this function which would return a fetcher of
 its own. Multiverse checks the returned `narHash` against the one recorded for that
 revision — the index records digests for the trees those hashes name. See
 [mirrors](./nix-api.md#mirrors).
@@ -76,9 +78,12 @@ flake. It fetches nothing. A revision becomes a real tree only when you force
 a derivation out of it.
 
 Cost is therefore per _revision touched_, not per package. Revisions are
-memoised, so three packages from one revision cost what one package costs;
-three packages from three revisions cost three fetches. Each revision actually
-used is a one-time ~378 MB which is the size of the Nixpkgs tree.
+memoised, so:
+
+- 3 packages from 1 revision cost what 1 package costs and
+- 3 packages from 3 revisions cost 3 fetches.
+
+Each revision actually used is a one-time ~378 MB which is the size of the Nixpkgs tree.
 
 There is a second reason inputs could not work even if they were lazy: nixpkgs
 had no `flake.nix` before 20.03. Revisions older than that cannot be flake
@@ -91,14 +96,25 @@ obvious encoding would. Every count below is a measurement taken on
 2026-08-10 and left there; the index grows hourly, and the [status block in
 the README](../README.md#status) is what carries the current figures.
 
-`revisions.json` is the spine: 1,532 nixos-unstable channel bumps from
+The [`revisions.json`](../revisions.json) file is the spine: 1,532 nixos-unstable channel bumps from
 2012-07-05 to 2026-08-16, each with its commit, date, channel name and
 `narHash`. Everything else refers to a revision by its **offset** into this
-array, which is why the other files stay small.
+array, which is why the other files stay small, e.g `jq ".[0] revisions.json`:
+
+```json
+[
+  {
+    "rev": "34ab99075ac4f7e40cf037eef32cb1c360bb85e9",
+    "date": "2026-08-31",
+    "name": "nixos-26.11pre1064949.34ab99075ac4",
+    "narHash": "sha256-hn1oU2rue2SYK8dAr8+WNZWtbsz1S2W5mnHlSEuh3bo="
+  }
+]
+```
 
 The channel name spells its nixpkgs commit two ways, and the archive holds
 both. From the 17.03 era on it is the last dot-separated field, as in
-`nixos-26.11pre1049422.f13ff45afd1b`. Before that, nixos and nixpkgs were
+`nixos-26.11pre1064949.34ab99075ac4`. Before that, nixos and nixpkgs were
 separate repositories and a name carried one commit from each —
 `nixos-13.07pre4909_b32ef4d-2238a23` is the nixos commit and then the nixpkgs
 one. Only the trailing hash names a tree worth indexing; the leading one is
@@ -114,14 +130,22 @@ them; they were dropped rather than special-cased. The versions that lived only
 at those commits went with them — all of them eval-only records, since a
 revision with no listing can have no store path.
 
-`index/versions.json` maps each (attribute, version) to the single newest
-revision that shipped it:
+The [`index/versions.json`](../index/versions.json) maps each (attribute, version) to the single newest
+revision in [`revision.json`](../revisions.json) that shipped it. For example (`jq ".attrs.hello" index/versions.json`) returns:
 
 ```json
 {
   "revisionCount": 1540,
   "attrs": {
-    "hello": { "2.8": 0, "2.12.2": 1494, "2.12.3": null }
+    {
+      "2.7": 0,
+      "2.8": 13
+      "2.10": 728,
+      "2.12": 822,
+      "2.12.1": 1369,
+      "2.12.2": 1486,
+      "2.12.3": null,
+    }
   }
 }
 ```
@@ -160,17 +184,23 @@ across 31,798 attributes**.
 `index/history.json` answers the question `versions.json` deliberately cannot:
 not "where can I get this version" but "when did this version exist". It stores
 each version's lifetime as runs of revision offsets, nesting only when a version
-left and came back:
+left and came back (`jq .attrs.hello index/history.json`):
 
 ```json
 {
-  "hello": {
-    "2.12.3": [1495, null],
-    "2.10": [
-      [1, 723],
-      [728, 728]
-    ]
-  }
+  "2.10": [
+    [14, 723],
+    [728, 728]
+  ],
+  "2.12": [
+    [724, 727],
+    [729, 822]
+  ],
+  "2.12.1": [823, 1369],
+  "2.12.2": [1370, 1486],
+  "2.12.3": [1487, null],
+  "2.7": [0, 0],
+  "2.8": [1, 13]
 }
 ```
 
@@ -206,7 +236,7 @@ indexing it, and in that window the newly appended revision is one the index has
 never evaluated — resolving to it would claim a version was current in a tree
 nobody looked at.
 
-`releases.json` is separate and indexed by nothing: 25 release channels, each
+The file [`releases.json`](../releases.json) is separate and indexed by nothing. It contains 25 release channels, each
 holding the current tip of its branch. Releases move as backports are applied, so a release is a channel, not a snapshot, and it lives outside the revision array for that reason. See [releases move, revisions do not](./nix-api.md#releases-move-revisions-do-not).
 
 ## Minimising
