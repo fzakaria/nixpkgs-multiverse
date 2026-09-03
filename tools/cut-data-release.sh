@@ -63,12 +63,37 @@ if [ ${#CHANGED[@]} -eq 0 ]; then
 fi
 echo "cutting $TAG with ${#CHANGED[@]} changed file(s)"
 
-# Create the dated release if this is the day's first cut. --notes kept
-# short: data-pins.json is the real manifest.
-if ! gh release view "$TAG" > /dev/null 2>&1; then
+# The day's first cut opens the release; a later run the same day is a
+# top-up and `gh release create` never runs for it.
+MODE="cut"
+if gh release view "$TAG" > /dev/null 2>&1; then
+  MODE="top-up"
+fi
+
+# What moved in the index this run, rendered from the working tree
+# against HEAD. That comparison holds because update-index.yml cuts
+# before it commits, so HEAD is still the previous index;
+# release-notes.py says so rather than reporting zeroes when it is not.
+# A notes failure never fails the cut: the standing sentence stands in.
+NOTES=$(mktemp)
+BODY=$(mktemp)
+trap 'rm -f "$NOTES" "$BODY"' EXIT
+python3 "$HERE/release-notes.py" --root "$MT" --mode "$MODE" --files "${CHANGED[@]}" > "$NOTES" \
+  || echo "Automated dated cut of the store-path artifacts. Addressed by data-pins.json; assets on this tag are immutable. See docs/store-paths.md." > "$NOTES"
+
+# A top-up keeps the notes of the cut that opened the release — they
+# describe a different run — and gains this cut's section below them.
+if [ "$MODE" = "cut" ]; then
   gh release create "$TAG" \
     --title "Store-path artifacts, ${TAG#data-}" \
-    --notes "Automated dated cut of the store-path artifacts. Addressed by data-pins.json; assets on this tag are immutable. See docs/store-paths.md."
+    --notes-file "$NOTES"
+else
+  {
+    gh release view "$TAG" --json body --jq .body
+    printf '\n---\n\n'
+    cat "$NOTES"
+  } > "$BODY"
+  gh release edit "$TAG" --notes-file "$BODY"
 fi
 
 gh release upload "$TAG" "${CHANGED[@]}"
