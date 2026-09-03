@@ -351,6 +351,7 @@ def shell(title, body, nav, name, store_path, origin):
       <nav class="site">
         <a href="../">Index</a>
         <a class="active" href="./">Documentation</a>
+        <a href="https://fzakaria.github.io/grail/" title="grail: solve version-range queries over this index">Version ranges</a>
         <a href="{REPO}">GitHub</a>
       </nav>
     </header>
