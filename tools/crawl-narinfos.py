@@ -17,6 +17,16 @@ finish (concatenated gzip streams are a valid gzip file), so a run resumes
 where the last one stopped and the hourly job pays only for digests it has
 never seen. --recheck-dead re-fetches seed digests recorded as dead, for
 liveness refreshes.
+
+The graph is the only record of what has been fetched, and it holds nothing
+else — no placeholder standing in for a digest nobody asked about, since every
+reader of the file takes a record in it for evidence. A runner that starts
+without one crawls every seed and closes every closure again: about 2.3M
+narinfos, a quarter of an hour against the hourly job's 90-minute budget.
+
+--max-fetch bounds that one run, not the graph. Counting the records already
+on disk against the ceiling would make a graph that grew past it stop crawling
+altogether, which is a stall rather than a budget.
 """
 import argparse
 import gzip
@@ -121,18 +131,14 @@ def load_seeds(seed_files):
 
 
 def load_graph(path):
-    """Digests already in the graph: natively crawled ones, currently-dead
-    ones, and stubs.
+    """Digests this graph holds a record for, and which of them are dead.
 
-    A stub (written by tools/restore-outpaths-state.sh when no rolling graph
-    exists) marks a digest whose published artifacts are already truth: it is
-    never re-crawled as a root, but it does NOT satisfy a closure walk — the
-    first time a new root's BFS reaches one it is crawled natively, which is
-    what keeps closures complete without a cold runner re-crawling thirteen
-    years of paths up front."""
-    native, dead, stubs = set(), set(), set()
+    Every record came from an actual narinfo fetch, so presence here is what
+    "we have looked at this" means and absence is what puts a digest in the
+    frontier. Nothing else may be written to the file."""
+    native, dead = set(), set()
     if not os.path.exists(path):
-        return native, dead, stubs
+        return native, dead
     with gzip.open(path, "rt") as f:
         for line in f:
             try:
@@ -140,16 +146,12 @@ def load_graph(path):
             except Exception:
                 continue
             d = rec["d"]
-            if rec.get("stub"):
-                stubs.add(d)
-                continue
             native.add(d)
-            stubs.discard(d)
             if rec.get("ok"):
                 dead.discard(d)
             else:
                 dead.add(d)
-    return native, dead, stubs
+    return native, dead
 
 
 def crawl_wave(digests, threads, stats_label):
@@ -172,8 +174,15 @@ def crawl_wave(digests, threads, stats_label):
 def append_graph(path, records):
     # A separate gzip member per wave: readers see one concatenated stream,
     # and a crashed run loses at most the wave being written.
+    #
+    # A fetch that ran out of retries is dropped rather than written. `err`
+    # says the network gave up, not that the path is gone, and every reader of
+    # this file takes a not-ok record for a death — so leaving it out is what
+    # puts the digest back in the next run's frontier.
     with gzip.open(path, "at") as f:
         for rec in records:
+            if rec.get("err"):
+                continue
             f.write(json.dumps(rec, separators=(",", ":")) + "\n")
 
 
@@ -182,7 +191,12 @@ def main():
     ap.add_argument("--seeds", nargs="+", required=True, help="outpaths json files")
     ap.add_argument("--graph", required=True, help="crawl state, jsonl.gz")
     ap.add_argument("--threads", type=int, default=32)
-    ap.add_argument("--max-total", type=int, default=3_000_000)
+    ap.add_argument(
+        "--max-fetch",
+        type=int,
+        default=3_000_000,
+        help="narinfos to fetch in this run",
+    )
     ap.add_argument(
         "--recheck-dead",
         action="store_true",
@@ -190,32 +204,28 @@ def main():
     )
     args = ap.parse_args()
 
-    native, dead, stubs = load_graph(args.graph)
-    print(
-        f"{len(native)} natively crawled, {len(stubs)} stubs, {len(dead)} dead",
-        flush=True,
-    )
+    native, dead = load_graph(args.graph)
+    print(f"{len(native)} crawled, {len(dead)} dead", flush=True)
 
-    # Roots: seed digests neither crawled nor covered by published truth.
+    # Roots: every seed digest this graph has never fetched.
     seeds = load_seeds(args.seeds)
-    frontier = seeds - native - stubs
+    frontier = seeds - native
     if args.recheck_dead:
         frontier |= seeds & dead
 
     crawled = set(native)
-    total = len(native)
+    fetched = 0
     wave = 0
-    while frontier and total < args.max_total:
-        batch = sorted(frontier)[: args.max_total - total]
+    while frontier and fetched < args.max_fetch:
+        batch = sorted(frontier)[: args.max_fetch - fetched]
         print(f"wave {wave}: {len(batch)} to crawl", flush=True)
         results = crawl_wave(batch, args.threads, f"wave {wave}")
         append_graph(args.graph, results)
         crawled.update(batch)
-        total += len(batch)
+        fetched += len(batch)
 
         # Next frontier: every reference this wave surfaced that has never
-        # been crawled natively. A stub qualifies — reaching one through a
-        # closure walk is exactly when it earns a real record.
+        # been crawled.
         frontier = set()
         for rec in results:
             for r in rec.get("refs") or []:
@@ -223,7 +233,11 @@ def main():
                     frontier.add(r)
         wave += 1
 
-    print(f"done: {total} total, frontier left {len(frontier)}", flush=True)
+    print(
+        f"done: {fetched} fetched, {len(crawled)} digests in the graph, "
+        f"frontier left {len(frontier)}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

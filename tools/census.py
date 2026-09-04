@@ -11,9 +11,12 @@ Outputs:
   census-results.json   {at, total, narinfoOk, narOk, missingNarinfo: [...],
                          missingNar: [...]} — the snapshot the rolling
                          release publishes.
-  --graph (optional)    newly dead digests are appended to the crawl graph
-                         as {"d": ..., "ok": false} records, so the next
-                         consolidation marks them dead without a re-crawl.
+  --graph (optional)    liveness changes are appended to the crawl graph as
+                         {"d": ..., "ok": bool} records, so the next
+                         consolidation sees them without a re-crawl. Both
+                         directions: consolidation carries a verdict forward
+                         until a fetch contradicts it, and this is the sweep
+                         that fetches.
 """
 import argparse
 import gzip
@@ -31,6 +34,26 @@ RETRIES = 3
 # top of a fresh TLS handshake, which is why they are counted above.
 RETRY_BACKOFF_SECONDS = 0.5
 TIMEOUT_SECONDS = 30
+
+
+def dead_digests(graph):
+    """Digests the crawl graph currently records as gone.
+
+    Only these can be resurrected, which is the whole reason to read a 500 MB
+    file here: appending an alive record for each of the 600k paths that
+    answered would say nothing the graph does not already hold."""
+    dead = set()
+    with gzip.open(graph, "rt") as f:
+        for line in f:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            if rec.get("ok"):
+                dead.discard(rec["d"])
+            else:
+                dead.add(rec["d"])
+    return dead
 
 
 def load_seeds(seed_files):
@@ -125,7 +148,7 @@ def main():
     ap.add_argument("--seeds", nargs="+", required=True, help="outpaths json files")
     ap.add_argument("--out", required=True, help="census-results.json")
     ap.add_argument(
-        "--graph", help="crawl graph to append newly dead digests to (optional)"
+        "--graph", help="crawl graph to append liveness changes to (optional)"
     )
     ap.add_argument("--threads", type=int, default=32)
     ap.add_argument("--date", required=True, help="the snapshot's date, YYYY-MM-DD")
@@ -189,14 +212,31 @@ def main():
         flush=True,
     )
 
-    # Feed the deaths back into the graph so consolidation sees them; a
-    # missing NAR is a dead path even though its narinfo lingers.
-    newly_dead = missing_narinfo + missing_nar
-    if args.graph and newly_dead:
-        with gzip.open(args.graph, "at") as f:
-            for d in newly_dead:
-                f.write(json.dumps({"d": d, "ok": False}) + "\n")
-        print(f"{len(newly_dead)} dead digests appended to {args.graph}", flush=True)
+    # Feed the changes back into the graph so consolidation sees them. Deaths,
+    # because a missing NAR is a dead path even though its narinfo lingers —
+    # and resurrections, because consolidation carries a verdict forward
+    # until a fetch contradicts it, and this is the sweep that fetches.
+    #
+    # The records carry liveness alone. Sizes, name and references stay
+    # whatever the crawl recorded: this is a liveness sweep, and it read the
+    # narinfo of a path it already knows.
+    if args.graph:
+        was_dead = dead_digests(args.graph)
+        newly_dead = sorted(set(missing_narinfo + missing_nar) - was_dead)
+        alive_again = sorted(
+            {r["d"] for r in checked if r["narinfo"] and r["nar"]} & was_dead
+        )
+        changed = [{"d": d, "ok": False} for d in newly_dead]
+        changed += [{"d": d, "ok": True} for d in alive_again]
+        if changed:
+            with gzip.open(args.graph, "at") as f:
+                for rec in changed:
+                    f.write(json.dumps(rec) + "\n")
+        print(
+            f"{len(newly_dead)} newly dead and {len(alive_again)} resurrected "
+            f"digests appended to {args.graph}",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

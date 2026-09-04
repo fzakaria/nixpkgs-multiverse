@@ -570,6 +570,11 @@ footer {
 .badge-dead {
   color: var(--delta-del);
 }
+/* Nothing has probed this path yet — neither of the other two, so neither
+   of their colors. */
+.badge-unknown {
+  color: var(--muted);
+}
 
 /* A dependency chip: one path, one small box. Link chips take the accent on
    hover like everything else. */

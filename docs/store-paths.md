@@ -101,8 +101,31 @@ payload it points at — the cache remembering a path and the cache still
 serving its bytes are different claims. The initial census verified 100.00%
 of matched paths alive, down to every NAR payload file; a weekly workflow
 ([census.yml](../.github/workflows/census.yml)) repeats the sweep, publishes
-the snapshot to the rolling release, and feeds any deaths back into the
-artifacts so the site and `fast.*` stop advertising them.
+the snapshot to the rolling release, and feeds the result back into the
+artifacts so the site and `fast.*` stop advertising a path that is gone. It
+writes both directions — a path that answers again after being recorded dead
+is written back as alive.
+
+### Absence is not death
+
+Liveness has three states and `info-indexed` has one field to spell two of
+them, so the third is spelled by leaving the digest out. An entry exists only
+where something looked: a crawl record, a MANIFEST-era listing, or a verdict a
+previous cut published. A digest with none of the three is not in the file —
+the stats page's `matched` drops it, a package page shows no badge, and
+`fast.*` is unaffected either way, since it reads the outpaths files and never
+this one.
+
+Verdicts accumulate rather than expire. Each run carries forward every entry
+it has nothing newer to say about, so what the file claims for a digest is the
+last fetch anyone made against it, however long ago. That is what makes the
+weekly sweep's resurrections worth as much as its deaths, and why a row is
+only ever written from a fetch.
+
+The crawl graph holds the same line: it records what has been fetched and
+nothing else. A runner that restores no graph re-crawls — about 2.3M narinfos,
+a quarter of an hour, in a job that allows ninety minutes and normally
+finishes in ninety seconds. `checks.store-liveness` covers the rule.
 
 ## Multi-output packages
 
@@ -181,7 +204,8 @@ scripts live in `tools/`, the evaluators they drive in `nix/`, and
 3. join the two into digests (`join-eval-listing.py`: pairs that closed before
    the previous cut are carried over, only the delta is resolved);
 4. crawl cache.nixos.org for the newly resolved digests and their transitive
-   references (`crawl-narinfos.py`, resuming from the rolling crawl graph);
+   references (`crawl-narinfos.py`, resuming from the rolling crawl graph, and
+   crawling the lot again if it restored none);
 5. consolidate into the artifact files (`consolidate-outpaths.py`), with the
    previously published copies as fallback for digests this runner never
    crawled;

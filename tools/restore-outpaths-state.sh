@@ -15,6 +15,9 @@
 # A missing rolling asset is not an error — the first run after a seed has
 # no graph yet — but missing pinned artifacts are: without the fallback a
 # consolidation would shrink the published files to this runner's delta.
+#
+# Nothing is written into the crawl graph here: it holds fetched records
+# only. A run that restored none crawls every digest again, which is minutes.
 set -euo pipefail
 
 MT="${MULTIVERSE_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -99,29 +102,5 @@ for name, pin in sorted(pins["files"].items()):
 print(f"restored {fetched} pinned artifacts, {failures} failures")
 sys.exit(1 if failures else 0)
 PY
-
-# No rolling graph means the crawler would start cold and re-crawl thirteen
-# years of narinfos. Instead, seed it with a STUB record per already-pinned
-# digest: the crawler skips stubs as roots (their artifacts are published
-# truth) but still crawls one natively the first time a new root's closure
-# walk touches it, and the consolidator ignores stubs entirely — its answers
-# for them come from the prev-shards fallback.
-if [ ! -s "$WORK/graph.jsonl.gz" ]; then
-  python3 - "$DATA" "$WORK/graph.jsonl.gz" <<'PY'
-import glob, gzip, json, os, sys
-
-data, graph = sys.argv[1:3]
-digests = set()
-for p in sorted(glob.glob(os.path.join(data, "prev", "*outpaths-*.json"))):
-    for vers in json.load(open(p))["attrs"].values():
-        for entry in vers.values():
-            digests.add(entry[0])
-
-with gzip.open(graph, "wt") as out:
-    for d in sorted(digests):
-        out.write(json.dumps({"d": d, "ok": True, "stub": True}) + "\n")
-print(f"seeded the crawl graph with {len(digests)} stubs")
-PY
-fi
 
 echo "state restored under $WORK"

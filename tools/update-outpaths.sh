@@ -140,7 +140,9 @@ for system in ${SYSTEMS//,/ }; do
 done
 
 # 4. Crawl narinfos for digests the graph has never seen: newly resolved
-#    versions and their transitive references.
+#    versions and their transitive references. A runner that restored no graph
+#    re-crawls all of them, which is minutes — the graph carries fetched
+#    records only, so there is nothing else to start from.
 python3 "$HERE/crawl-narinfos.py" --seeds "${SEEDS[@]}" --graph "$GRAPH"
 
 # 5. Consolidate the graph into the three artifact files. The previously

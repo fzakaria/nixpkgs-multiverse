@@ -20,6 +20,11 @@ local graph knows nothing about keeps its previous entry: the full graph was
 built once, on the backfill machine, and an incremental runner only ever
 crawls the delta, so without this fallback a fresh runner would shrink the
 artifacts to its own delta.
+
+A digest neither the graph nor the fallback answers for gets no entry at all.
+"Nobody looked" and "we looked and it is gone" are different claims, and
+info-indexed has one field to say either in, so the first is said by saying
+nothing. See docs/store-paths.md, "Absence is not death".
 """
 import argparse
 import glob
@@ -76,11 +81,6 @@ def main():
             except Exception:
                 continue
             d = rec["d"]
-            # A stub only exists to pace the crawler; the published prev
-            # artifacts are the truth for its digest, so it must not count
-            # as crawled here.
-            if rec.get("stub"):
-                continue
             crawled.add(d)
             if not rec.get("ok"):
                 # A later dead record supersedes an earlier alive one: the
@@ -96,7 +96,12 @@ def main():
                 fs_of[d] = rec["fs"]
             if rec.get("url"):
                 url_of[d] = rec["url"]
-            refs[d] = rec.get("refs") or []
+            # Only a record that read a narinfo knows the references. The
+            # census appends liveness alone when a path it had recorded dead
+            # answers again, and that record must leave the crawl's reference
+            # list standing rather than blanking it.
+            if "refs" in rec:
+                refs[d] = rec["refs"]
     print(f"{len(alive)} alive nodes in graph", flush=True)
 
     # The MANIFEST era: fill sizes, names and refs for paths the cache has
@@ -160,15 +165,21 @@ def main():
             print(f"  {n}/{len(idx)}", flush=True)
     print(f"{len(closures)} closures computed", flush=True)
 
-    # The local graph is authoritative for whatever it crawled — a fresh
-    # dead verdict must not be papered over — but a digest it never looked
-    # at (and no manifest resurrected) keeps its previously published entry.
-    # A fresh death keeps the previous sizes and name: the path's history is
-    # still true, only its liveness changed.
+    # The local graph is authoritative for whatever it looked at — a fresh
+    # dead verdict must not be papered over — and a digest it never looked at
+    # keeps its previously published entry. A fresh death keeps the previous
+    # sizes and name: the path's history is still true, only its liveness
+    # changed.
+    #
+    # A digest with neither is skipped outright rather than written as dead.
+    # The three ways to have looked are a crawl record, a reference list, and
+    # a MANIFEST-era size — the manifest era is evidence too: the 2013 channel
+    # recorded the path, and its absence from today's cache is the finding.
     info = {}
     for d in idx:
-        if d not in crawled and d not in refs and d in prev_info:
-            info[d] = prev_info[d]
+        if d not in crawled and d not in refs and d not in ns_of:
+            if d in prev_info:
+                info[d] = prev_info[d]
             continue
         prev = prev_info.get(d) or [0, None, None, None, None]
         info[d] = [
@@ -178,6 +189,7 @@ def main():
             name_of.get(d) or prev[3],
             url_of.get(d) or prev[4],
         ]
+    print(f"{len(info)} of {len(idx)} indexed digests have a verdict", flush=True)
 
     refs_indexed = {}
     for d in idx:

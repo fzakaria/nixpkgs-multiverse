@@ -40,18 +40,29 @@ export function CacheBadge({ entry }) {
 
   // A failed fetch says nothing about the path — only a definite 404 does.
   // Anything else falls back to what the census recorded.
+  //
+  // `ok` can also be absent: the shard carries a verdict only for a digest
+  // something actually probed, so an entry without one has never been looked
+  // at. That is neither of the other two answers, and claiming the census
+  // gave either would be inventing one, so the badge waits for the live
+  // fetch — which is a moment.
   const verified = live && !live.err;
-  const alive = verified ? !live.dead : entry.ok !== 0;
+  const unknown = !verified && entry.ok == null;
+  const alive = verified ? !live.dead : entry.ok === 1;
   const ns = live?.ns ?? entry.ns;
   const fs = live?.fs ?? entry.fs;
 
   return html`
     <div class="cachebadge">
-      <span class=${alive ? "badge-ok" : "badge-dead"}>
-        ${alive ? "●" : "○"}
-        ${alive
-          ? ` still substitutable${verified ? "" : " (census)"}`
-          : " no longer in the cache"}
+      <span
+        class=${unknown ? "badge-unknown" : alive ? "badge-ok" : "badge-dead"}
+      >
+        ${unknown ? "◍" : alive ? "●" : "○"}
+        ${unknown
+          ? " asking the cache"
+          : alive
+            ? ` still substitutable${verified ? "" : " (census)"}`
+            : " no longer in the cache"}
       </span>
       ${fs != null &&
       html`<span class="muted">

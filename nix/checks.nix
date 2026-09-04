@@ -144,6 +144,80 @@ in
     PY
   '';
 
+  # tools/consolidate-outpaths.py, on the one rule the artifacts rest on: an
+  # entry in info-indexed is a claim somebody looked, and `0` means a 404
+  # rather than a shrug. A digest with no evidence has to be left out, because
+  # a verdict once published is carried forward by every run with nothing
+  # newer to say. The inputs are three small files, so the rule is testable
+  # without a crawl.
+  store-liveness = pkgs.runCommand "check-store-liveness" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    mkdir -p work/prev && cd work
+
+    # Four seed digests, one per case the consolidation has to tell apart.
+    cat > outpaths-x86_64-linux.json <<'JSON'
+    {"revisionCount": 1,
+     "attrs": {"crawled": {"1.0": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]},
+               "gone":    {"1.0": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]},
+               "back":    {"1.0": ["cccccccccccccccccccccccccccccccc"]},
+               "unseen":  {"1.0": ["dddddddddddddddddddddddddddddddd"]}}}
+    JSON
+
+    # `back` was published dead and answers again this week, as the census
+    # writes it: liveness alone, no references. `unseen` appears nowhere.
+    cat > graph.jsonl <<'JSON'
+    {"d":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ok":true,"name":"crawled-1.0","ns":100,"fs":40,"url":"nar/a.nar.zst","refs":[]}
+    {"d":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ok":false}
+    {"d":"cccccccccccccccccccccccccccccccc","ok":true}
+    JSON
+    gzip -c graph.jsonl > graph.jsonl.gz
+
+    # The previously published cut: sizes and a name for everything it knew,
+    # `back` recorded dead, and references and a closure for `back` that the
+    # liveness-only record above must not blank.
+    python3 - <<'PY'
+    import gzip, json
+    info = {
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [1, 200, 80, "gone-1.0", "nar/b.nar.zst"],
+        "cccccccccccccccccccccccccccccccc": [0, 300, 120, "back-1.0", "nar/c.nar.zst"],
+    }
+    refs = {"cccccccccccccccccccccccccccccccc": ["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-libc-2.42"]}
+    closures = {"cccccccccccccccccccccccccccccccc": [999, 2, 0]}
+    for name, obj in [("info-indexed", info), ("refs-indexed", refs), ("closures", closures)]:
+        with gzip.open(f"prev/{name}.json.gz", "wt") as f:
+            json.dump(obj, f)
+    PY
+
+    python3 ${../tools/consolidate-outpaths.py} \
+      --seeds outpaths-x86_64-linux.json --graph graph.jsonl.gz \
+      --prev-dir prev --out-dir out
+
+    python3 - <<'PY' | tee $out
+    import gzip, json
+    info = json.load(gzip.open("out/info-indexed.json.gz", "rt"))
+    refs = json.load(gzip.open("out/refs-indexed.json.gz", "rt"))
+    closures = json.load(gzip.open("out/closures.json.gz", "rt"))
+
+    crawled, gone, back, unseen = (c * 32 for c in "abcd")
+
+    # A digest nobody has ever looked at carries no entry. This is the whole
+    # check: a `0` here would render as "no longer in the cache".
+    assert unseen not in info, info
+
+    # A fresh crawl is authoritative in both directions, and a death keeps the
+    # sizes and name the path had — its history is still true.
+    assert info[crawled] == [1, 100, 40, "crawled-1.0", "nar/a.nar.zst"], info
+    assert info[gone] == [0, 200, 80, "gone-1.0", "nar/b.nar.zst"], info
+
+    # A census resurrection flips liveness without claiming to know anything
+    # else, so the references and closure the crawl found still stand.
+    assert info[back] == [1, 300, 120, "back-1.0", "nar/c.nar.zst"], info
+    assert refs[back] == ["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-libc-2.42"], refs
+    assert closures[back] == [999, 2, 0], closures
+
+    print(f"{len(info)} of 4 seed digests have a verdict")
+    PY
+  '';
+
   # The retry in tools/fetch-store-paths.py, with the transport stubbed — see
   # tests/fetch-retry.py for what the policy is and why it is worth pinning.
   # The script is passed by store path rather than found relative to the test,
