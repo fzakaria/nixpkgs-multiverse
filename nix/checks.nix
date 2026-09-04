@@ -78,144 +78,19 @@ in
   '';
 
   # tools/merge-nested-eval.py, the one piece of --topup that decides what ends
-  # up in the file the join reads. Its inputs are two small JSON documents, so
-  # the whole thing is testable without evaluating a revision — which is the
-  # reason to have the merge in a script of its own rather than inline in the
-  # shell.
+  # up in the file the join reads. See tests/topup-merge.py for what it has to
+  # get right. The scripts are passed by store path rather than found relative
+  # to each other, since under `nix build` the two arrive separately.
   topup-merge = pkgs.runCommand "check-topup-merge" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    mkdir -p work && cd work
-
-    # A full evaluation carrying one stale nested row, as a revision indexed
-    # under an older package-set list would.
-    cat > base.json <<'JSON'
-    {"rev":"abc","system":"x86_64-linux","attrCount":3,"errorCount":1,
-     "attrs":{"hello":{"name":"hello-2.12.2","outputs":{"out":"aaaa"}},
-              "ripgrep":{"name":"ripgrep-14.1.0","outputs":{"out":"bbbb"}},
-              "gone.child":{"name":"gone-1.0","outputs":{"out":"cccc"}}}}
-    JSON
-    cat > base.errors.json <<'JSON'
-    {"broken":"error: no","gone.child2":"error: stale"}
-    JSON
-    cat > nested.json <<'JSON'
-    {"rev":"abc","system":"x86_64-linux","attrCount":1,"errorCount":1,
-     "attrs":{"jetbrains.idea":{"name":"idea-2025.3.1","outputs":{"out":"dddd"}}}}
-    JSON
-    cat > nested.errors.json <<'JSON'
-    {"jetbrains.rider":"error: unfree"}
-    JSON
-
-    python3 ${../tools/merge-nested-eval.py} --base base.json --nested nested.json       --out merged.json --base-errors base.errors.json       --nested-errors nested.errors.json --out-errors merged.errors.json
-
-    # A base built for another revision, and a nested run that reported a
-    # top-level attribute: both would corrupt the merged file, so both have to
-    # be refused rather than merged.
-    sed 's/"rev":"abc"/"rev":"zzz"/' nested.json > wrong-rev.json
-    sed 's/jetbrains.idea/hello/' nested.json > stray.json
-    for bad in wrong-rev stray; do
-      if python3 ${../tools/merge-nested-eval.py} --base base.json            --nested $bad.json --out /dev/null 2>/dev/null; then
-        echo "merge accepted $bad.json, which it must refuse" >&2
-        exit 1
-      fi
-    done
-
-    python3 - <<'PY' | tee $out
-    import json
-    m = json.load(open("merged.json"))
-    errors = json.load(open("merged.errors.json"))
-
-    # Top-level rows carry across untouched — the whole point, since deriving
-    # them again is what costs the 52 seconds.
-    assert m["attrs"]["hello"]["outputs"]["out"] == "aaaa", m
-    assert m["attrs"]["ripgrep"]["outputs"]["out"] == "bbbb", m
-
-    # The new list's rows arrive.
-    assert m["attrs"]["jetbrains.idea"]["outputs"]["out"] == "dddd", m
-
-    # And a row from a set no longer on the list is gone, which is why this
-    # replaces the nested half rather than appending to it.
-    assert "gone.child" not in m["attrs"], m
-    assert "gone.child2" not in errors, errors
-
-    assert m["attrCount"] == 3, m
-    assert m["rev"] == "abc" and m["system"] == "x86_64-linux", m
-    assert errors == {"broken": "error: no", "jetbrains.rider": "error: unfree"}, errors
-    assert m["errorCount"] == 2, m
-    print(f"merged {m['attrCount']} attrs, {m['errorCount']} errors")
-    PY
+    python3 ${../tests/topup-merge.py} ${../tools/merge-nested-eval.py} | tee $out
   '';
 
   # tools/consolidate-outpaths.py, on the one rule the artifacts rest on: an
-  # entry in info-indexed is a claim somebody looked, and `0` means a 404
-  # rather than a shrug. A digest with no evidence has to be left out, because
-  # a verdict once published is carried forward by every run with nothing
-  # newer to say. The inputs are three small files, so the rule is testable
-  # without a crawl.
+  # entry in info-indexed is a claim somebody looked. See
+  # tests/store-liveness.py for the four cases and why absence is a state of
+  # its own.
   store-liveness = pkgs.runCommand "check-store-liveness" { nativeBuildInputs = [ pkgs.python3 ]; } ''
-    mkdir -p work/prev && cd work
-
-    # Four seed digests, one per case the consolidation has to tell apart.
-    cat > outpaths-x86_64-linux.json <<'JSON'
-    {"revisionCount": 1,
-     "attrs": {"crawled": {"1.0": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]},
-               "gone":    {"1.0": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]},
-               "back":    {"1.0": ["cccccccccccccccccccccccccccccccc"]},
-               "unseen":  {"1.0": ["dddddddddddddddddddddddddddddddd"]}}}
-    JSON
-
-    # `back` was published dead and answers again this week, as the census
-    # writes it: liveness alone, no references. `unseen` appears nowhere.
-    cat > graph.jsonl <<'JSON'
-    {"d":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ok":true,"name":"crawled-1.0","ns":100,"fs":40,"url":"nar/a.nar.zst","refs":[]}
-    {"d":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","ok":false}
-    {"d":"cccccccccccccccccccccccccccccccc","ok":true}
-    JSON
-    gzip -c graph.jsonl > graph.jsonl.gz
-
-    # The previously published cut: sizes and a name for everything it knew,
-    # `back` recorded dead, and references and a closure for `back` that the
-    # liveness-only record above must not blank.
-    python3 - <<'PY'
-    import gzip, json
-    info = {
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": [1, 200, 80, "gone-1.0", "nar/b.nar.zst"],
-        "cccccccccccccccccccccccccccccccc": [0, 300, 120, "back-1.0", "nar/c.nar.zst"],
-    }
-    refs = {"cccccccccccccccccccccccccccccccc": ["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-libc-2.42"]}
-    closures = {"cccccccccccccccccccccccccccccccc": [999, 2, 0]}
-    for name, obj in [("info-indexed", info), ("refs-indexed", refs), ("closures", closures)]:
-        with gzip.open(f"prev/{name}.json.gz", "wt") as f:
-            json.dump(obj, f)
-    PY
-
-    python3 ${../tools/consolidate-outpaths.py} \
-      --seeds outpaths-x86_64-linux.json --graph graph.jsonl.gz \
-      --prev-dir prev --out-dir out
-
-    python3 - <<'PY' | tee $out
-    import gzip, json
-    info = json.load(gzip.open("out/info-indexed.json.gz", "rt"))
-    refs = json.load(gzip.open("out/refs-indexed.json.gz", "rt"))
-    closures = json.load(gzip.open("out/closures.json.gz", "rt"))
-
-    crawled, gone, back, unseen = (c * 32 for c in "abcd")
-
-    # A digest nobody has ever looked at carries no entry. This is the whole
-    # check: a `0` here would render as "no longer in the cache".
-    assert unseen not in info, info
-
-    # A fresh crawl is authoritative in both directions, and a death keeps the
-    # sizes and name the path had — its history is still true.
-    assert info[crawled] == [1, 100, 40, "crawled-1.0", "nar/a.nar.zst"], info
-    assert info[gone] == [0, 200, 80, "gone-1.0", "nar/b.nar.zst"], info
-
-    # A census resurrection flips liveness without claiming to know anything
-    # else, so the references and closure the crawl found still stand.
-    assert info[back] == [1, 300, 120, "back-1.0", "nar/c.nar.zst"], info
-    assert refs[back] == ["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-libc-2.42"], refs
-    assert closures[back] == [999, 2, 0], closures
-
-    print(f"{len(info)} of 4 seed digests have a verdict")
-    PY
+    python3 ${../tests/store-liveness.py} ${../tools/consolidate-outpaths.py} | tee $out
   '';
 
   # The retry in tools/fetch-store-paths.py, with the transport stubbed — see
