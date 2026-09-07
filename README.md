@@ -34,8 +34,8 @@ Questions, ideas, and "does it handle X?" are welcome in the
 
 <!-- BEGIN index-status -->
 
-- **310,083 package versions** across **32,125 attributes**, from **1,545 revisions**
-- 2012-07-05 → 2026-09-05, newest [`c043004d1c69`](https://github.com/NixOS/nixpkgs/commit/c043004d1c6985732bcc1cbc5a9c9aecbbb4e0f0) · [`nixos-26.11pre1068089`](https://releases.nixos.org/?prefix=nixos/unstable/nixos-26.11pre1068089.c043004d1c69/)
+- **310,320 package versions** across **32,136 attributes**, from **1,546 revisions**
+- 2012-07-05 → 2026-09-07, newest [`dc5d91f84032`](https://github.com/NixOS/nixpkgs/commit/dc5d91f840324650bac8c379428c7037a416959a) · [`nixos-26.11pre1068949`](https://releases.nixos.org/?prefix=nixos/unstable/nixos-26.11pre1068949.dc5d91f84032/)
 <!-- END index-status -->
 
 ## Quickstart
