@@ -140,6 +140,18 @@ Fakes expose them (`fast.latest.ffmpeg.lib`), and the site lists them.
 the per-system split — let a name claimed by two packages, or by two
 architectures, hand back somebody else's `lib`.
 
+The site publishes the same maps split by digest, at
+`outs-<system>/<xx>.json` (`tools/shard-outs.py`): around a thousand shards of
+a few KB per system, keyed as the artifact is:
+
+```json
+{ "<out digest>": { "bin": "<digest>", "lib": "<digest>", "man": "<digest>" } }
+```
+
+Every suffix the join recorded is there, minus siblings that repeat the digest
+they are filed under. The meta shards carry each sibling's suffix and size;
+these carry its digest.
+
 The evaluation reports every output of a derivation directly, so nothing here
 depends on some consumer having referenced an output. The site's own
 `outs-indexed` view still recovers siblings from closures, because it wants the

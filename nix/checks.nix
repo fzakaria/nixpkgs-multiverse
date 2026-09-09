@@ -93,6 +93,14 @@ in
     python3 ${../tests/store-liveness.py} ${../tools/consolidate-outpaths.py} | tee $out
   '';
 
+  # tools/shard-outs.py, which decides what a page holding one digest can look
+  # up. See tests/outs-shards.py for the split and for what is dropped rather
+  # than published. The script is passed by store path rather than found
+  # relative to the test, since under `nix build` the two arrive separately.
+  outs-shards = pkgs.runCommand "check-outs-shards" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/outs-shards.py} ${../tools/shard-outs.py} | tee $out
+  '';
+
   # The retry in tools/fetch-store-paths.py, with the transport stubbed — see
   # tests/fetch-retry.py for what the policy is and why it is worth pinning.
   # The script is passed by store path rather than found relative to the test,
