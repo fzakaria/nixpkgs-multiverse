@@ -5,6 +5,9 @@
 # that versions.json and revisions.json always deploy atomically — the offsets in
 # one are only valid against the other.
 { pkgs, self }:
+let
+  inherit (import ./site-system.nix) siteSystem;
+in
 pkgs.runCommand "nixpkgs-multiverse-site" { } ''
   mkdir -p $out
   cp -r ${pkgs.multiverse-site-data}/* $out/
@@ -16,6 +19,12 @@ pkgs.runCommand "nixpkgs-multiverse-site" { } ''
   # The output path is known before building, so the page can name the very
   # store path it is served out of (a benign self-reference).
   substituteInPlace $out/js/app.js --replace-fail "__STORE_PATH__" "$out"
+
+  # The store directories are named for their system, so the page has to know
+  # which one the site aggregates before it can fetch anything. The same name
+  # the data build was given (nix/site-system.nix), not the system this is
+  # built on: the site describes the same store from any builder.
+  substituteInPlace $out/js/data.js --replace-fail "__SITE_SYSTEM__" "${siteSystem}"
   if [ -d $out/docs ]; then
     for f in $out/docs/*.html; do
       substituteInPlace "$f" --replace-fail "__STORE_PATH__" "$out"

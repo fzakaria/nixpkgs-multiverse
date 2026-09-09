@@ -46,9 +46,10 @@ evaluated for `aarch64-darwin` at all.
 The site follows the same rule. Its aggregate views — reverse dependencies, the
 census, the universe map — are built from one system, and a package page shows
 that system's store paths with a picker to switch between all of them, carried
-in the URL as `?sys=` so a link names the system it was read on. The alternate system's
-metadata lives in its own `meta-<system>/` shards and is fetched only when a
-reader picks it, so a page nobody switches costs exactly what it did before.
+in the URL as `?sys=` so a link names the system it was read on. Each system's
+metadata lives in its own `meta-<system>/` shards, the aggregated one included,
+and an alternate is fetched only when a reader picks it, so a page nobody
+switches costs exactly what it did before.
 
 ## Resolving a pair
 

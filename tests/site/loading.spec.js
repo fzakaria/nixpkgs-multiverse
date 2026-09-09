@@ -14,20 +14,24 @@ const ATTR = "ripgrep";
 // whole files the shell needs, and one shard each of the four sharded indexes
 // — "ri" being the first two characters of the attribute above.
 //
-// systems.json is the list of systems store paths are published for, and it is
-// here rather than in a shard because the page needs it before it can name the
-// system it is showing. The alternate system's own meta directory is
-// deliberately absent: it is fetched only when a reader picks that system,
+// systems.json is the list of systems store paths are published for, which
+// the picker offers. The alternate systems' own meta directories are
+// deliberately absent: one is fetched only when a reader picks that system,
 // which system.spec.js asserts from the other side.
-const PACKAGE_PAGE_FILES = [
-  "history/ri.json",
-  "meta/ri.json",
-  "revdeps/ri.json",
-  "revisions.json",
-  "stats.json",
-  "systems.json",
-  "versions/ri.json",
-];
+//
+// The store directories are named for their system, so the expected set is
+// built from the site's own list rather than written down: the aggregated
+// system is its first entry.
+const packagePageFiles = (system) =>
+  [
+    "history/ri.json",
+    `meta-${system}/ri.json`,
+    `revdeps-${system}/ri.json`,
+    "revisions.json",
+    "stats.json",
+    "systems.json",
+    "versions/ri.json",
+  ].sort();
 
 // Every same-origin JSON file the page asked for while `run` was executing,
 // sorted, so the set can be compared rather than searched.
@@ -53,11 +57,15 @@ test("a package page asks for exactly the files it renders", async ({
 }) => {
   // An exact set, not a "does not contain releases.json" check: the point is
   // to notice anything new joining the boot chain, whichever file it is.
+  const res = await page.request.get("/systems.json");
+  expect(res.ok()).toBe(true);
+  const [primary] = await res.json();
+
   const asked = await jsonRequests(page, async () => {
     await page.goto(`/?pkg=${ATTR}`);
     await expect(page.locator(".row.cols-ver").first()).toBeVisible();
   });
-  expect(asked).toEqual(PACKAGE_PAGE_FILES);
+  expect(asked).toEqual(packagePageFiles(primary));
 });
 
 test("a package page does not pull the graph library", async ({ page }) => {

@@ -9,7 +9,7 @@ import { html, useEffect, useMemo, useRef } from "htm/preact";
 
 import { MAX_RESULTS, SHARD_ERROR } from "../config.js";
 import { STORE_DIR, DIGEST_RE } from "../cache.js";
-import { Shard, useShard, useFile, useNames } from "../data.js";
+import { useShard, useFile, useNames, revdepsDirFor } from "../data.js";
 import { Link, Nav } from "../router.js";
 import { PackageDetail } from "./package.js";
 
@@ -46,7 +46,7 @@ function IdentifyCard({ digest, navigate }) {
 // depends:<attr> — every package that ever linked against any version of
 // <attr>, aggregated out of the reverse-dependency shards.
 function DependsSearch({ target, navigate }) {
-  const rd = useShard(Shard.REVDEPS, target);
+  const rd = useShard(revdepsDirFor(), target);
   if (!rd) return html`<div id="status" class="muted">Loading…</div>`;
   if (rd === SHARD_ERROR || !Object.keys(rd).length)
     return html`<div id="status" class="muted">

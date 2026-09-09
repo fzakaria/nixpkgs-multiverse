@@ -30,8 +30,8 @@ export const Shard = {
   HISTORY: "history",
   // Per-version store metadata: digest, sizes, closure, liveness, direct
   // references (interned in the shard's own "paths" table). One directory per
-  // system, because a store path belongs to one: META is the system the site
-  // aggregates, metaDirFor names the others.
+  // system, because a store path belongs to one, so these are prefixes rather
+  // than directories: metaDirFor and revdepsDirFor name the file to fetch.
   META: "meta",
   // Inverted references: who depended on each version of this attribute.
   REVDEPS: "revdeps",
@@ -138,22 +138,23 @@ export function useSystems() {
   return systems;
 }
 
-export const useMeta = (attr) => useWholeShard(Shard.META, attr);
+// The system the site aggregates, substituted by the build out of the
+// systems.json it just wrote. A package page names its shards before it has
+// fetched anything, so the default cannot wait on systems.json — that is one
+// round trip in front of the two files the page exists to load.
+const SITE_SYSTEM = "__SITE_SYSTEM__";
 
-// Where one system's store data lives. The first entry of systems.json is the
-// one the site aggregates and keeps in the unsuffixed directories; the others
-// are published beside them and fetched only when a reader picks that system.
+// Where one system's store data lives. Every directory names its system,
+// including the aggregated one: a digest belongs to exactly one system, and a
+// reader working out which directory holds the default has been handed a rule
+// instead of a name.
 //
 // Reverse dependencies are per system for the same reason the paths are: "used
 // by 42 package versions" describes one system's dependency graph.
-const dirFor = (base, system, systems) =>
-  !systems || system === systems[0] ? base : `${base}-${system}`;
+const dirFor = (base, system) => `${base}-${system || SITE_SYSTEM}`;
 
-export const metaDirFor = (system, systems) =>
-  dirFor(Shard.META, system, systems);
-export const revdepsDirFor = (system, systems) =>
-  dirFor(Shard.REVDEPS, system, systems);
-export const useRevdeps = (attr) => useShard(Shard.REVDEPS, attr);
+export const metaDirFor = (system) => dirFor(Shard.META, system);
+export const revdepsDirFor = (system) => dirFor(Shard.REVDEPS, system);
 
 // A reference entry out of the meta shard's intern table: [name] for a path
 // that is not an indexed package, [name, attr, version] for one that is.

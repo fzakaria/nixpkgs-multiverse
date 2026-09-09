@@ -15,8 +15,8 @@ import { test, expect } from "@playwright/test";
 const ATTR = "ripgrep";
 
 // Read from the site rather than hard-coded: the list grows by one with every
-// system backfilled. The first entry keeps the unsuffixed directories; the
-// rest are published beside it. See tools/build-site-data.py.
+// system backfilled. The first entry is the one the site aggregates and the
+// one a page shows before anyone picks. See tools/build-site-data.py.
 async function publishedSystems(page) {
   const res = await page.request.get("/systems.json");
   expect(res.ok()).toBe(true);
@@ -46,6 +46,34 @@ test("the picker offers every published system and defaults to the aggregated on
   // The first system in systems.json is the one every other view is built
   // from, so it is what the page shows before anyone chooses.
   await expect(select).toHaveValue(systems[0]);
+});
+
+test("the default page reads the aggregated system's directories", async ({
+  page,
+}) => {
+  // The page cannot wait for systems.json to name its shards, so the build
+  // substitutes the system into data.js. Nothing inside the page can notice
+  // that going stale: a directory the build never wrote 404s, and a 404 shard
+  // reads as "no attribute here" — every version renders with no store path
+  // and no error. So check the name the page actually asks for against the
+  // name the build published.
+  const [primary] = await publishedSystems(page);
+
+  const asked = [];
+  await page.route("**/meta-*/**", (route) => {
+    asked.push(new URL(route.request().url()).pathname.split("/")[1]);
+    return route.continue();
+  });
+
+  await page.goto(`/?pkg=${ATTR}`);
+  const first = page.locator(".row.cols-ver").first();
+  await expect(first).toBeVisible();
+  await first.click();
+  await expect(
+    page.locator(".cmd", { hasText: "nix-store --realise" }).first(),
+  ).toBeVisible();
+
+  expect([...new Set(asked)]).toEqual([`meta-${primary}`]);
 });
 
 test("an alternate system's shards are not fetched until it is picked", async ({

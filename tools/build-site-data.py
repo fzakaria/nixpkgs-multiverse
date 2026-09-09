@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the site's store-data products from the pinned data artifacts.
 
-Usage: build-site-data.py <repo> <datadir> <out>
+Usage: build-site-data.py <repo> <datadir> <out> <system>
   repo:    the nixpkgs-multiverse checkout (revisions.json, index/)
   datadir: outpaths-<system>.json, tip-outpaths-<system>.json,
   outs-indexed.json.gz, and the
@@ -9,11 +9,14 @@ Usage: build-site-data.py <repo> <datadir> <out>
            period shards (info-indexed-2024.json.gz, ...) — every file
            matching <stem>*.json.gz is merged
   out:     the site tree to write into
+  system:  the system the site aggregates (nix/site-system.nix), which the
+           page also names its shard directories after
 
 Emits, beside whatever the rest of the site build produces:
-  meta/<shard>.json      per-attr store entries: digest, liveness, sizes,
-                         closure, interned direct deps, sibling outputs
-  revdeps/<shard>.json   reverse dependencies, capped per version
+  meta-<system>/<shard>.json     per-attr store entries: digest, liveness,
+                                 sizes, closure, interned direct deps,
+                                 sibling outputs
+  revdeps-<system>/<shard>.json  reverse dependencies, capped per version
   identify/<xx>.json     digest -> [attr, version], sharded by digest prefix,
                          and covering every system: a digest names one path on
                          one system, so there is nothing to disambiguate
@@ -61,10 +64,12 @@ LEADERBOARD_ROWS = 200
 DIGEST_LEN = 32
 
 # Which system's store paths the site shows. The artifacts are per system
-# because a store path is, and the site is a single view over them.
-SITE_SYSTEM = "x86_64-linux"
-
-repo, datadir, out = sys.argv[1:4]
+# because a store path is, and the site is a single view over them. It arrives
+# as an argument rather than as a constant here because site.nix has to
+# substitute the same name into the page: nix/site-system.nix states it once
+# and hands it to both. It is not the system this runs on — the site is built
+# on darwin as readily as on linux, and describes the same store either way.
+repo, datadir, out, SITE_SYSTEM = sys.argv[1:5]
 os.makedirs(out, exist_ok=True)
 
 J = lambda *p: os.path.join(*p)
@@ -267,7 +272,9 @@ pairs, by_digest, by_name = index_pairs(outpaths, tips)
 print(f"{len(pairs)} pairs with digests, {len(by_digest)} distinct digests")
 
 revdeps = defaultdict(lambda: defaultdict(set))  # tattr -> tver -> {(a,v)}
-n_shards = build_meta_shards(pairs, by_digest, by_name, J(out, "meta"), revdeps)
+n_shards = build_meta_shards(
+    pairs, by_digest, by_name, J(out, f"meta-{SITE_SYSTEM}"), revdeps
+)
 print(f"meta ({SITE_SYSTEM}): {n_shards} shards")
 
 
@@ -311,7 +318,8 @@ for system in alt_systems:
     print(f"meta ({system}): {n_shards} shards, {len(alt_pairs)} pairs, {n_rd} revdeps")
 
 # ---- revdeps shards --------------------------------------------------------
-print(f"revdeps ({SITE_SYSTEM}): {dump_revdeps(revdeps, J(out, 'revdeps'))} shards")
+n_rd = dump_revdeps(revdeps, J(out, f"revdeps-{SITE_SYSTEM}"))
+print(f"revdeps ({SITE_SYSTEM}): {n_rd} shards")
 
 # ---- identify shards -------------------------------------------------------
 id_buckets = defaultdict(dict)

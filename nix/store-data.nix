@@ -6,6 +6,9 @@
 # open tip on its own), so it gets an assembled checkout root the way mvs'
 # build-db.py does.
 { pkgs }:
+let
+  inherit (import ./site-system.nix) siteSystem;
+in
 pkgs.runCommand "nixpkgs-multiverse-store-data"
   {
     nativeBuildInputs = [ pkgs.python3 ];
@@ -17,7 +20,8 @@ pkgs.runCommand "nixpkgs-multiverse-store-data"
     cp ${../revisions.json} "$root/revisions.json"
     cp ${../index/versions.json} "$root/index/versions.json"
     cp ${../index/history.json} "$root/index/history.json"
-    python3 ${../tools/build-site-data.py} "$root" ${pkgs.multiverse-data} $out
+    python3 ${../tools/build-site-data.py} "$root" ${pkgs.multiverse-data} $out \
+      ${siteSystem}
 
     # The sibling-output maps, split for readers that hold one digest: the
     # meta shards carry each sibling's suffix and size but not its digest,

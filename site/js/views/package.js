@@ -274,8 +274,8 @@ export function PackageDetail({ attr, route, revisions, navigate }) {
   // Both directories follow the picked system, so switching fetches that
   // system's shards and nothing else is ever requested: a reader who never
   // switches asks for exactly what they asked for before the picker existed.
-  const storeFile = useWholeShard(metaDirFor(shown, systems), attr);
-  const revdeps = useShard(revdepsDirFor(shown, systems), attr);
+  const storeFile = useWholeShard(metaDirFor(shown), attr);
+  const revdeps = useShard(revdepsDirFor(shown), attr);
   const [bulk, bulkButton] = useBulk();
   const [openVers, setOpenVers] = useState(() => new Set());
   // Read inside toggleVer without making it depend on the set, so the callback
