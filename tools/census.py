@@ -125,7 +125,17 @@ class Worker(threading.Thread):
                 break
         if not nar_url:
             return {"d": digest, "narinfo": True, "nar": False}
+
+        # A HEAD that ran out of retries is unknown, not a missing payload.
+        # The retry budget is spent here far more often than on the narinfo
+        # above, since narinfos are edge-cached and NAR objects are not, and a
+        # death published from this line is carried forward by every
+        # consolidation until a later census fetches the path again. The
+        # census of 2026-09-06 called 30 NARs missing this way and
+        # cache.nixos.org served all 30 on re-check.
         status, _ = self.request("HEAD", f"/{nar_url}")
+        if status is None:
+            return {"d": digest, "narinfo": True, "nar": False, "err": True}
         return {"d": digest, "narinfo": True, "nar": status == 200}
 
     def run(self):
@@ -175,9 +185,10 @@ def main():
     for w in workers:
         w.join()
 
-    # A digest that timed out through every retry is unknown, not dead; it is
-    # excluded from the missing lists so a flaky hour cannot declare a
-    # massacre, and the count is reported so a flaky hour is still visible.
+    # A digest that timed out through every retry is unknown, not dead,
+    # whichever of its two requests ran out. It is excluded from the missing
+    # lists so a flaky hour cannot declare a massacre, and the count is
+    # reported so a flaky hour is still visible.
     elapsed = time.time() - stats["t0"]
     print(
         f"checked {len(results)} in {elapsed / 60:.1f} min "

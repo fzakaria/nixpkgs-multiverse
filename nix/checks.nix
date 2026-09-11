@@ -109,6 +109,14 @@ in
     python3 ${../tests/fetch-retry.py} ${../tools/fetch-store-paths.py} | tee $out
   '';
 
+  # Which census outcomes tools/census.py is willing to call a death, with the
+  # transport stubbed. A death is published and then carried forward by every
+  # consolidation after it, so the outcome that writes one has to be a cache
+  # that answered. See tests/census-verdict.py for the four outcomes.
+  census-verdict = pkgs.runCommand "check-census-verdict" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/census-verdict.py} ${../tools/census.py} | tee $out
+  '';
+
   # The browser suite over the built site. Everything else here is a pure build;
   # this one is not, and cannot be: the page imports Preact from jsdelivr at run
   # time, so a sandboxed build has no way to render it at all. __noChroot is what
