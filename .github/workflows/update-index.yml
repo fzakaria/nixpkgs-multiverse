@@ -56,10 +56,20 @@ jobs:
       # would otherwise rebuild. It does not cache the revisions themselves:
       # those arrive through builtins.fetchTree and `nix flake prefetch`, which
       # fetch at evaluation time and never consult a substituter.
+      #
+      # pushFilter keeps the index-derived data out. The site, its data trees,
+      # the database and the fetched release artifacts get new hashes with
+      # every index commit, are ~250 MB per run compressed, and are never
+      # substituted again once the next commit lands — they grew this cache to
+      # 13 GiB. A filtered path still gets pushed if a pushed path's closure
+      # holds it, so the wrappers that embed one (test-site, serve-site, the
+      # mvs wrapper around multiverse.db) are named too. No spaces in the
+      # regex: the post-build hook passes it to grep unquoted.
       - uses: cachix/cachix-action@v17
         with:
           name: nixpkgs-multiverse
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+          pushFilter: '(-(multiverse-data|nixpkgs-multiverse-(site|site-data|store-data)|multiverse\.db|test-site|check-site|serve-site|mvs)|\.json\.gz)$'
 
       # NIXPKGS is deliberately left unset: with no clone on disk the script
       # resolves new channel revisions through the GitHub API instead, which is
