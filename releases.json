@@ -168,10 +168,10 @@
   "rev": "b6018f87da91d19d0ab4cf979885689b469cdd41"
  },
  "26.05": {
-  "build": 12104,
-  "date": "2026-10-16",
-  "name": "nixos-26.05.12104.ed583b5bcfb5",
-  "narHash": "sha256-uFRCFzCN3OPC/cQMmzdIYiFKhakVVx2ZkXO9fOuYkGk=",
-  "rev": "ed583b5bcfb5f3b7bf6164b24a62fa133682cffe"
+  "build": 12192,
+  "date": "2026-10-18",
+  "name": "nixos-26.05.12192.8ce73368d1ef",
+  "narHash": "sha256-F7meJtbqGttmUoMmYjRRgkVs42sn7bh7vvRvLPlUN98=",
+  "rev": "8ce73368d1efd4d657e9064d29b144a52046b4e8"
  }
 }
