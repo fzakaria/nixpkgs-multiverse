@@ -185,7 +185,11 @@ in
     };
 
     lock = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
+      type = lib.types.nullOr (
+        lib.types.coercedTo lib.types.path
+        (path: [path])
+        (lib.types.listOf lib.types.path)
+      );
       default = null;
       example = lib.literalExpression "./multiverse.lock";
       description = ''
@@ -341,7 +345,7 @@ in
     locked = lib.mkOption {
       type = lib.types.raw;
       readOnly = true;
-      default = if cfg.lock == null then { } else mv.readLock cfg.lock;
+      default = if cfg.lock == null then { } else lib.foldl' (acc: lock: acc // mv.readLock lock) { } cfg.lock;
       defaultText = lib.literalExpression "{ <name> = <derivation>; }";
       description = ''
         `lock` resolved to derivations, keyed by attribute — the lock file's
