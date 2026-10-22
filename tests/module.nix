@@ -119,6 +119,55 @@ let
     lock = lockFile;
   };
 
+  # A second lock file naming a different attribute, as a separate module of
+  # the same configuration would carry it. Only attribute names are read from
+  # the cases below, so none of them materialises the revision behind jq.
+  otherLockFile = builtins.toFile "other.lock" (
+    builtins.toJSON {
+      version = 1;
+      pins.jq = {
+        rev = builtins.substring 11 12 (mv.revOf "jq" "1.7");
+        version = "1.7";
+      };
+    }
+  );
+
+  # Two modules each setting `lock`, which merge into one set of pins. One
+  # module passing a list, a second a single path and a third null is the
+  # mix a configuration split across files actually produces.
+  lockModules =
+    defs:
+    (lib.evalModules {
+      modules = [
+        ../modules/nixos.nix
+        stub
+        (pkgs.path + "/nixos/modules/misc/assertions.nix")
+        { multiverse.enable = true; }
+      ]
+      ++ map (lock: { multiverse.lock = lock; }) defs;
+      specialArgs = { inherit pkgs; };
+    }).config;
+
+  multiLock = lockModules [
+    [ lockFile ]
+    otherLockFile
+    null
+  ];
+
+  # The same file reached through two modules, which names every pin twice
+  # but is still one lock file and must not count as a clash.
+  sameLockTwice = lockModules [
+    lockFile
+    lockFile
+  ];
+
+  # Two different lock files both pinning ripgrep. Which entry won would
+  # depend on module order, so the core is supposed to reject it.
+  contestedLocks = lockModules [
+    lockFile
+    (builtins.toFile "rival.lock" (builtins.readFile lockFile))
+  ];
+
   # Two pins that were current together, so minimising puts them on one
   # revision. jq 1.7 outlived ripgrep 13.0.0, so ripgrep forces the revision
   # and the group lands on the one the pin assertions above already
@@ -221,6 +270,23 @@ assert nixos.multiverse.locked == { };
 # An attribute claimed by both a version pin and the lock file collides in the
 # same way, and is caught in the same place.
 assert builtins.length (failing contestedLock) == 1;
+
+# Lock files set from several modules merge into one set of pins, and a null
+# from one module sets nothing rather than conflicting with the others.
+assert
+  builtins.attrNames multiLock.multiverse.locked == [
+    "jq"
+    "ripgrep"
+  ];
+assert failing multiLock == [ ];
+
+# The same lock file set twice is one file, not a clash with itself.
+assert builtins.attrNames sameLockTwice.multiverse.locked == [ "ripgrep" ];
+assert failing sameLockTwice == [ ];
+
+# An attribute pinned by two different lock files fails the configuration
+# instead of resolving to whichever file the module system merged last.
+assert builtins.length (failing contestedLocks) == 1;
 
 # The multiverse itself rides along for everything the options do not cover.
 assert nixos.multiverse.instance ? at;

@@ -52,6 +52,20 @@ let
   # `cooldown.packages`. Each side resolves to a different derivation exporting
   # the same binaries, so leaving this to build time turns a plain configuration
   # mistake into a file-collision error out of buildEnv.
+  # Each distinct lock file resolved on its own. The same file set from two
+  # modules appears twice in `cfg.lock` but is one set of pins, so the list is
+  # deduplicated before any file is read.
+  lockSets = map mv.readLock (lib.unique cfg.lock);
+
+  # Attributes pinned by more than one lock file. Merging the sets keeps
+  # whichever file the module system listed last, so the revision a pin
+  # resolved to would follow module order rather than anything written down.
+  lockClashes = builtins.attrNames (
+    lib.filterAttrs (_: claims: builtins.length claims > 1) (
+      lib.groupBy lib.id (lib.concatMap builtins.attrNames lockSets)
+    )
+  );
+
   pinNames = builtins.attrNames cfg.pins;
   lockNames = builtins.attrNames cfg.locked;
   contested = lib.unique (
@@ -185,15 +199,23 @@ in
     };
 
     lock = lib.mkOption {
-      type = lib.types.nullOr (
-        lib.types.coercedTo lib.types.path
-        (path: [path])
-        (lib.types.listOf lib.types.path)
-      );
-      default = null;
+      # A single path or null is coerced to a list, so every module setting
+      # this option contributes to one list rather than conflicting with the
+      # others, and `lock = if ... then ./multiverse.lock else null` still
+      # works in a configuration split across files.
+      type = lib.types.coercedTo (lib.types.nullOr lib.types.path) (
+        lock: lib.optional (lock != null) lock
+      ) (lib.types.listOf lib.types.path);
+      default = [ ];
       example = lib.literalExpression "./multiverse.lock";
       description = ''
-        A `multiverse.lock` written by `mvs lock`, installed alongside `pins`.
+        A `multiverse.lock` written by `mvs lock`, or a list of them, installed
+        alongside `pins`.
+
+        Every module that sets this option adds to the list, so each part of a
+        configuration can carry its own lock file. An attribute pinned by two
+        different lock files is a configuration error: which entry won would
+        otherwise depend on module order.
 
         The difference from `pins` is who maintains it. A pin here is a version
         string somebody typed and has to keep typing; a lock file is a set of
@@ -345,11 +367,12 @@ in
     locked = lib.mkOption {
       type = lib.types.raw;
       readOnly = true;
-      default = if cfg.lock == null then { } else lib.foldl' (acc: lock: acc // mv.readLock lock) { } cfg.lock;
+      default = lib.foldl' (acc: pins: acc // pins) { } lockSets;
       defaultText = lib.literalExpression "{ <name> = <derivation>; }";
       description = ''
-        `lock` resolved to derivations, keyed by attribute — the lock file's
-        counterpart to `pinned`. Empty when no lock file is set.
+        `lock` resolved to derivations, keyed by attribute — the lock files'
+        counterpart to `pinned`. Every lock file's pins in one set, and empty
+        when no lock file is set.
       '';
     };
 
@@ -380,6 +403,16 @@ in
           `multiverse.cooldown.packages`. Each would resolve to a different
           derivation of the same package, and they would collide in the same
           package list. Pick one.
+        '';
+      }
+      {
+        assertion = lockClashes == [ ];
+        message = ''
+          multiverse: ${lib.concatStringsSep ", " lockClashes} is pinned by more than
+          one of the lock files in `multiverse.lock`:
+          ${lib.concatMapStringsSep "\n" (lock: "  ${toString lock}") (lib.unique cfg.lock)}
+          Which revision won would depend on module order. Keep the pin in one
+          lock file and `mvs lock rm` it from the others.
         '';
       }
     ];
