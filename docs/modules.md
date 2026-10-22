@@ -35,10 +35,22 @@ programs.vscode.package = config.multiverse.pinned.vscode;
 # and, for a lock file, config.multiverse.locked.vscode
 ```
 
+`lock` also takes a list, and every module that sets it adds to that list, so
+a configuration split across files can give each part its own lock file:
+
+```nix
+# hosts/common.nix
+multiverse.lock = ./common.lock;
+
+# hosts/workstation.nix
+multiverse.lock = ./workstation.lock;
+```
+
 An attribute claimed by more than one of `pins`, `lock` and
 `cooldown.packages` is a configuration error rather than a file collision out
 of `buildEnv`: each side would resolve to a different derivation of the same
-package.
+package. The same goes for an attribute pinned by two different lock files,
+where the revision that won would otherwise depend on module order.
 
 **Note**: Only indexed attributes work — every top-level one, plus the children
 of the few package sets [`nix/nested-sets.nix`](../nix/nested-sets.nix) lists,
