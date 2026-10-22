@@ -840,7 +840,12 @@ let
   fastClosed = checkedArtifact outpathsFile (readArtifact outpathsFile);
   fastTip = checkedArtifact tipOutpathsFile (readArtifact tipOutpathsFile);
 
-  # { attr -> { version -> [digest, drv-name-if-differs, ...] } }
+  # { attr -> { version -> [digest, drv-name-if-differs, offset-if-walked] } }
+  #
+  # The offset is there when Hydra did not finish the version's build at its
+  # own newest revision, and the digest is the newest build of it that it did
+  # finish, at that offset; see docs/store-paths.md. A row with an offset
+  # always carries the name too, so the offset stays third.
   #
   # The unsupported-system guard sits here rather than at each use: this is
   # where an artifact is first read, so forcing anything downstream of it on a
@@ -953,11 +958,22 @@ let
         or import the multiverse with fastFallback = "eval" to fall back silently.
       '';
 
+  # The real derivation behind a fake for `attr` at `ver`: the one at the
+  # revision its build came from. For a walked row that is the recorded offset
+  # rather than the version's newest revision, so the fake and its `.eval`
+  # stay one build instead of the same version built twice.
+  fastEvalDrv =
+    attr: ver: entry:
+    if entry != null && builtins.length entry > 2 then
+      resolveIn instances.${toString (builtins.elemAt entry 2)} attr
+    else
+      versionDrv attr ver;
+
   fastVersion =
     attr: ver:
     let
       entry = fastEntryFor attr ver;
-      evalDrv = versionDrv attr ver;
+      evalDrv = fastEvalDrv attr ver entry;
     in
     if entry == null then
       fastMissing attr ver ''versions.${quotedAttr attr}."${ver}"'' evalDrv
@@ -1353,7 +1369,10 @@ rec {
   # Three honesty classes, chosen per selector rather than approximated:
   #
   #   fast.versions / fast.latest are BIT-EXACT as of the data pin: the
-  #   digest is precisely the build the eval path resolves to.
+  #   digest is precisely the build the fake's `.eval` resolves to. That is
+  #   the eval path's own build, except where Hydra did not finish the
+  #   version at its newest revision: there both are the newest build of
+  #   that version it did finish (see fastEvalDrv).
   #
   #   fast.at and fast.tip (commit, date, label selectors, and the newest
   #   indexed revision) are VERSION-EXACT and build-canonical: the right

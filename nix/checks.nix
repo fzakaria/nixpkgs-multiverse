@@ -85,6 +85,13 @@ in
     python3 ${../tests/topup-merge.py} ${../tools/merge-nested-eval.py} | tee $out
   '';
 
+  # tools/join-eval-listing.py walking a pair back to its newest finished build
+  # when Hydra failed the one at its own revision, the same way in a full run
+  # and an incremental one. See tests/join-walk-back.py.
+  join-walk-back = pkgs.runCommand "check-join-walk-back" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    python3 ${../tests/join-walk-back.py} ${../tools/join-eval-listing.py} | tee $out
+  '';
+
   # tools/consolidate-outpaths.py, on the one rule the artifacts rest on: an
   # entry in info-indexed is a claim somebody looked. See
   # tests/store-liveness.py for the four cases and why absence is a state of

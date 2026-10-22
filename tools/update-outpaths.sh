@@ -120,7 +120,9 @@ fi
 
 # 3. Join evaluations against listings, one set of artifacts per system.
 #    Incremental hands the join the previously published files, so every pair
-#    that closed before them is carried over rather than resolved again.
+#    that closed before them is carried over rather than resolved again. The
+#    history is what a pair whose newest build Hydra did not finish walks back
+#    through, to the newest build of that version it did.
 PREV_ARG=()
 if [ "$MODE" = incremental ] && [ -d "$DATA/prev" ]; then
   PREV_ARG=(--prev-dir "$DATA/prev")
@@ -128,6 +130,7 @@ fi
 for system in ${SYSTEMS//,/ }; do
   python3 "$HERE/join-eval-listing.py" \
     --revisions "$MT/revisions.json" --versions "$MT/index/versions.json" \
+    --history "$MT/index/history.json" \
     --eval-dir "$EVAL" --paths-dir "$PATHS" --system "$system" \
     --out-dir "$DATA" --probe-cache "${PREV_ARG[@]}"
 done

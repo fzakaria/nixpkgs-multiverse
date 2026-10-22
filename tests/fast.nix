@@ -84,6 +84,34 @@ let
     fetchArtifact = { name, ... }: ../tests/fixtures/fast-data + "/${name}";
   };
 
+  # A multiverse whose revisions are each a one-file stand-in for nixpkgs
+  # holding the commit it was fetched for, so forcing a fake's `.eval` says
+  # which revision it came from without fetching one. The fetcher hands back
+  # the recorded narHash, as tests/mirrors.nix's honest fetcher does.
+  mvStandIn = import ../multiverse.nix {
+    inherit system;
+    fetchArtifact = { name, ... }: ../tests/fixtures/fast-data + "/${name}";
+    fetchRevision = r: {
+      outPath = builtins.toFile "nixpkgs-${r.rev}.nix" ''
+        { system, config ? { }, overlays ? [ ] }:
+        {
+          cutter = { type = "derivation"; builtAt = "${r.rev}"; };
+          hello = { type = "derivation"; builtAt = "${r.rev}"; };
+        }
+      '';
+      lastModified = 0;
+      inherit (r) rev narHash;
+    };
+  };
+  revAt = i: (builtins.elemAt mv.revisions i).rev;
+
+  # A pair whose build at its own newest revision Hydra did not finish,
+  # served by the newest build of the same version it did: the fixture row
+  # carries the offset that build came from, 1500, where cutter 2.4.1's own
+  # newest revision is 1518. The fake's `.eval` must be the derivation at
+  # 1500, so the fake and its escape hatch stay one build.
+  cutter = mvStandIn.fast.version "cutter" "2.4.1";
+
   hello = mv.fast.version "hello" "2.12.2";
   ffmpeg = mv.fast.version "ffmpeg" "9.0";
   tipHello = mv.fast.tip.hello;
@@ -185,6 +213,15 @@ assert foreignSystemRefused;
 # Every fake carries the lazy escape hatch to the real derivation. Only its
 # presence is asserted: forcing it would fetch a whole nixpkgs revision.
 assert hello ? eval;
+
+# Forced against the stand-in revisions instead, `.eval` is the derivation at
+# the revision the fake's build came from: the pair's own newest revision for
+# a plain row, and the recorded one for a row the join walked back.
+assert
+  (mvStandIn.fast.version "hello" "2.12.2").eval.builtAt == revAt mv.index.attrs.hello."2.12.2";
+assert cutter.name == "cutter-2.4.1" && cutter.version == "2.4.1";
+assert !(builtins.tryEval cutter.drvPath).success;
+assert cutter.eval.builtAt == revAt 1500;
 
 # The honesty contract: misses throw, releases refuse, drvPath says why.
 assert missThrows;

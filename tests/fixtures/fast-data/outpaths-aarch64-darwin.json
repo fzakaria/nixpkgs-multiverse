@@ -1,5 +1,12 @@
 {
  "attrs": {
+  "cutter": {
+   "2.4.1": [
+    "dcwr2bkixhz1nw83dkwxm6d0wndprqkj",
+    "cutter-2.4.1",
+    1500
+   ]
+  },
   "ffmpeg": {
    "9.0": [
     "dyrrwp394d0hn6py4hbkjndnkqfw271c",

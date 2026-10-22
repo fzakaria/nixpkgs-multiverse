@@ -19,6 +19,17 @@ the same. --probe-cache asks cache.nixos.org directly for the paths the listing
 did not vouch for, which is a stronger proof than membership rather than a
 weaker one: the narinfo either exists or it does not.
 
+A pair whose own revision proves nothing walks back. Hydra does not finish
+every build, and when the tip moves onto one it failed, the version's earlier
+build still substitutes: cutter 2.5.0 on aarch64-darwin failed at 02c087f3fe67
+while the build from two days before sat in the cache (issue #28). The walk
+steps back through the revisions of the version's newest run in
+index/history.json, newest first, and takes the first digest a listing or the
+cache vouches for, recording the offset it came from. It stays inside the
+newest run for the reason pins do (see docs/design.md): an older run of the
+same version is a version that left and came back, and its builds are not the
+ones the eval path names.
+
 Two modes. A full run resolves every pair from the evaluations and listings on
 disk — the backfill, which wants a file per revision. An incremental run is
 handed the previous artifacts with --prev-dir, keeps every pair that closed
@@ -26,8 +37,16 @@ before they were cut, and recomputes only what has moved since: the pairs that
 closed at a newer revision and the tip. That is what makes the hourly job need
 evaluations for the new bumps alone rather than for thirteen years.
 
+The two modes must write the same rows, so the incremental walk ends where its
+evaluations do. The previous artifacts' tip row for a pair already is the walk
+over every revision up to their tip, so a pair that reaches it takes that row,
+or misses if there was none. tests/join-walk-back.py holds the two to agreeing.
+
 Outputs (into --out-dir), all keyed by the same `system`:
-  outpaths-<system>.json      closed pairs: attr -> version -> [digest, name-if-differs]
+  outpaths-<system>.json      closed pairs: attr -> version ->
+                              [digest, name-if-differs, offset-if-walked]; a
+                              walked row always carries the name, so the offset
+                              stays third
   tip-outpaths-<system>.json  pairs still current at the newest revision indexed
   outs-<system>.json          digest -> {output suffix -> digest}, the siblings
                               of a multi-output package, keyed by the parent
@@ -59,6 +78,7 @@ NO_ATTR = "attribute-did-not-evaluate"
 NO_OUT = "derivation-has-no-out-output"
 NOT_BUILT = "not-in-channel-listing"
 NOT_CACHED = "not-in-listing-and-not-in-cache"
+MISS_REASONS = (NO_EVAL_FILE, NO_LISTING, NO_ATTR, NO_OUT, NOT_BUILT, NOT_CACHED)
 
 CACHE_HOST = "cache.nixos.org"
 USER_AGENT = "nixpkgs-multiverse"
@@ -141,6 +161,17 @@ def in_cache(digest):
     return False
 
 
+def newest_run_start(runs):
+    """The first offset of a version's newest run in index/history.json, or
+    None for a pair the history does not know. A run is `[first, last]`, and a
+    version that left and came back has a list of them, oldest first."""
+    if not runs:
+        return None
+    if isinstance(runs[0], list):
+        return runs[-1][0]
+    return runs[0]
+
+
 def split_output(value, name, output):
     """(digest, basename) for one output of an entry from reduce-eval-jobs.py.
 
@@ -156,6 +187,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--revisions", required=True, help="revisions.json")
     ap.add_argument("--versions", required=True, help="index/versions.json")
+    ap.add_argument(
+        "--history",
+        required=True,
+        help="index/history.json, for the revisions a walk back may visit",
+    )
     ap.add_argument("--eval-dir", required=True, help="index/.eval")
     ap.add_argument("--paths-dir", required=True, help="the listing digest pickles")
     ap.add_argument("--system", required=True)
@@ -176,6 +212,7 @@ def main():
 
     revs = json.load(open(args.revisions))
     index = json.load(open(args.versions))
+    history = json.load(open(args.history))["attrs"]
     n_revs = index["revisionCount"]
     tip_offset = n_revs - 1
 
@@ -190,8 +227,12 @@ def main():
 
     # An incremental run's inheritance. `covered` is one revision back from the
     # previous artifacts' coverage, because a pair that was at their tip may
-    # have closed at that revision and has to be resolved again.
-    prev_closed, prev_outs, covered = {}, {}, 0
+    # have closed at that revision and has to be resolved again. It is also
+    # where an incremental walk back stops evaluating and reads `prev_tip`
+    # instead; `walk_floor` stays None for a full run, which walks to the
+    # start of the run.
+    prev_closed, prev_tip, prev_outs, covered = {}, {}, {}, 0
+    walk_floor = None
     prev_path = (
         f"{args.prev_dir}/outpaths-{args.system}.json" if args.prev_dir else None
     )
@@ -199,6 +240,10 @@ def main():
         prev = json.load(open(prev_path))
         prev_closed = prev["attrs"]
         covered = max(0, prev["revisionCount"] - 1)
+        walk_floor = covered
+        prev_tip_path = f"{args.prev_dir}/tip-outpaths-{args.system}.json"
+        if os.path.exists(prev_tip_path):
+            prev_tip = json.load(open(prev_tip_path))["attrs"]
         prev_outs_path = f"{args.prev_dir}/outs-{args.system}.json"
         if os.path.exists(prev_outs_path):
             prev_outs = json.load(open(prev_outs_path))
@@ -214,12 +259,19 @@ def main():
     # Pairs whose evaluated path the listing did not name, kept whole so that
     # --probe-cache can ask the cache about them once the walk is done.
     unvouched = []
+    # digest -> whether cache.nixos.org has it, for every digest probed. The
+    # walk back meets the same path at revision after revision, since most
+    # bumps rebuild nothing, and asks about each one once.
+    verdicts = {}
 
-    def emit(target, attr, version, name, digest):
+    def emit(target, attr, version, name, digest, found_off=None):
         """Record one resolved pair. The derivation name rides along only when
         it is not what a consumer would reconstruct from the pair itself, which
-        is what keeps the file the size it is."""
+        is what keeps the file the size it is. A walked pair carries the offset
+        its build came from, and the name in front of it to keep it third."""
         row = [digest] if name == f"{attr}-{version}" else [digest, name]
+        if found_off is not None:
+            row = [digest, name, found_off]
         target.setdefault(attr, {})[version] = row
 
     for off in sorted(by_offset):
@@ -242,13 +294,11 @@ def main():
 
         path = eval_file(args.eval_dir, revs[off]["rev"], args.system)
         if path is None:
-            stats[NO_EVAL_FILE] += len(pairs)
             misses += [[attr, version, NO_EVAL_FILE] for attr, version in pairs]
             continue
 
         digests = load_digests(args.paths_dir, off)
         if digests is None:
-            stats[NO_LISTING] += len(pairs)
             misses += [[attr, version, NO_LISTING] for attr, version in pairs]
             continue
 
@@ -263,13 +313,11 @@ def main():
         for attr, version in pairs:
             entry = evaluated.get(attr)
             if entry is None:
-                stats[NO_ATTR] += 1
                 misses.append([attr, version, NO_ATTR])
                 continue
 
             name = entry["name"]
             if "out" not in entry["outputs"]:
-                stats[NO_OUT] += 1
                 misses.append([attr, version, NO_OUT])
                 continue
 
@@ -311,6 +359,7 @@ def main():
         )
         with ThreadPoolExecutor(PROBE_THREADS) as ex:
             found = list(ex.map(lambda u: in_cache(u[3]), unvouched))
+        verdicts.update((u[3], hit) for u, hit in zip(unvouched, found))
 
         # The siblings of everything that came back, in one pass rather than a
         # pool per package: three quarters of the aarch64 backfill's probes were
@@ -326,12 +375,12 @@ def main():
                 )
                 if hit
             }
+        verdicts.update((d, d in cached_siblings) for d in sibling_digests)
 
         for (attr, version, name, digest, siblings, target), hit in zip(
             unvouched, found
         ):
             if not hit:
-                stats[NOT_CACHED] += 1
                 misses.append([attr, version, NOT_CACHED])
                 continue
             emit(target, attr, version, name, digest)
@@ -340,9 +389,110 @@ def main():
             if vouched:
                 outs[digest] = vouched
     else:
-        stats[NOT_BUILT] = len(unvouched)
         for attr, version, _name, _digest, _siblings, _target in unvouched:
             misses.append([attr, version, NOT_BUILT])
+
+    # The walk back, for every pair its own revision could not prove. Each
+    # pair wants the revisions of its version's newest run below its own,
+    # newest first. Offsets are visited newest first across every pair at
+    # once, so a revision's evaluation and listing are loaded once, as above.
+    # An incremental run evaluates no further back than `walk_floor`.
+    walking, want = {}, defaultdict(list)
+    for attr, version, reason in misses:
+        own = index["attrs"][attr][version]
+        own = tip_offset if own is None else own
+        first = newest_run_start(history.get(attr, {}).get(version))
+        walking[(attr, version)] = (reason, own, first)
+        if first is None:
+            continue
+        lowest = first if walk_floor is None else max(first, walk_floor + 1)
+        for off in range(own - 1, lowest - 1, -1):
+            want[off].append((attr, version))
+
+    # (attr, version) -> (name, digest, offset, vouched siblings)
+    walked = {}
+    for off in sorted(want, reverse=True):
+        pairs = [p for p in want[off] if p not in walked]
+        if not pairs:
+            continue
+
+        # A revision that cannot prove anything is stepped over rather than
+        # ending the walk: one failed evaluation says nothing about the
+        # revisions around it.
+        path = eval_file(args.eval_dir, revs[off]["rev"], args.system)
+        digests = load_digests(args.paths_dir, off)
+        if path is None or digests is None:
+            continue
+        evaluated = json.load(open(path))["attrs"]
+        listing_meta = load_listing_meta(args.paths_dir, off)
+
+        # The listing first, exactly as for a pair's own revision.
+        unproven = []
+        for attr, version in pairs:
+            entry = evaluated.get(attr)
+            if entry is None or "out" not in entry["outputs"]:
+                continue
+            name = entry["name"]
+            digest, _ = split_output(entry["outputs"]["out"], name, "out")
+            siblings = {
+                o: d
+                for o, d in entry["outputs"].items()
+                if o != "out" and len(d) == DIGEST_LEN
+            }
+            if digest not in digests:
+                unproven.append((attr, version, name, digest, siblings))
+                continue
+            vouched = {o: d for o, d in siblings.items() if d in digests}
+            walked[(attr, version)] = (name, digest, off, vouched)
+            if digest in listing_meta:
+                manifest_meta[digest] = listing_meta[digest]
+
+        # Then the cache, for what the listing did not name. A pair that
+        # misses here keeps walking to the next revision down.
+        if not args.probe_cache or not unproven:
+            continue
+        ask = sorted({u[3] for u in unproven} - verdicts.keys())
+        with ThreadPoolExecutor(PROBE_THREADS) as ex:
+            verdicts.update(zip(ask, ex.map(in_cache, ask)))
+        hits = [u for u in unproven if verdicts[u[3]]]
+        ask = sorted({d for u in hits for d in u[4].values()} - verdicts.keys())
+        with ThreadPoolExecutor(PROBE_THREADS) as ex:
+            verdicts.update(zip(ask, ex.map(in_cache, ask)))
+        for attr, version, name, digest, siblings in hits:
+            vouched = {o: d for o, d in siblings.items() if verdicts[d]}
+            walked[(attr, version)] = (name, digest, off, vouched)
+
+    # Where an incremental walk stops evaluating, the previous artifacts take
+    # over: their tip row for a pair is that same walk, done over every
+    # revision up to their tip. A pair whose newest run started after their
+    # tip was never at it in this run, and gets nothing from there.
+    if walk_floor is not None:
+        for (attr, version), (_reason, own, first) in walking.items():
+            if (attr, version) in walked or first is None or first > walk_floor:
+                continue
+            row = prev_tip.get(attr, {}).get(version)
+            if row is None:
+                continue
+            name = row[1] if len(row) > 1 else f"{attr}-{version}"
+            off = row[2] if len(row) > 2 else walk_floor
+            walked[(attr, version)] = (name, row[0], off, prev_outs.get(row[0], {}))
+
+    misses = []
+    for (attr, version), (reason, own, _first) in walking.items():
+        if (attr, version) not in walked:
+            misses.append([attr, version, reason])
+            continue
+        name, digest, off, vouched = walked[(attr, version)]
+        target = tip if own == tip_offset else closed
+        emit(target, attr, version, name, digest, None if off == own else off)
+        if vouched:
+            outs[digest] = vouched
+        stats["walked"] += 1
+
+    # Each reason is counted on the misses that are left, so a pair the walk
+    # resolved is counted once, as walked.
+    for _attr, _version, reason in misses:
+        stats[reason] += 1
 
     os.makedirs(args.out_dir, exist_ok=True)
     head = {
@@ -354,6 +504,7 @@ def main():
         "vouchedByListing": stats["built"],
         "vouchedByCacheProbe": stats["probed"],
         "carriedFromPreviousCut": stats["carried"],
+        "vouchedAtEarlierRevision": stats["walked"],
     }
     written = {
         f"outpaths-{args.system}.json": {**head, "attrs": dict(sorted(closed.items()))},
@@ -383,12 +534,13 @@ def main():
         print(f"  {len(manifest_meta)} MANIFEST-era paths carry their own metadata")
 
     total = sum(stats.values())
-    resolved = stats["built"] + stats["probed"] + stats["carried"]
+    resolved = stats["built"] + stats["probed"] + stats["carried"] + stats["walked"]
     print(
         f"{args.system}: {resolved}/{total} pairs resolved "
-        f"({stats['probed']} by cache probe, {stats['carried']} carried over)"
+        f"({stats['probed']} by cache probe, {stats['carried']} carried over, "
+        f"{stats['walked']} at an earlier revision)"
     )
-    for reason in (NO_EVAL_FILE, NO_LISTING, NO_ATTR, NO_OUT, NOT_BUILT, NOT_CACHED):
+    for reason in MISS_REASONS:
         if stats[reason]:
             print(f"  {stats[reason]:>7} {reason}")
     print(

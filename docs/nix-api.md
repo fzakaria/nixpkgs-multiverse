@@ -196,9 +196,9 @@ There are some differences to be aware of and they depends on the selector:
 
 | selector                         | class                                                                    | what it promises                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `fast.version` / `fast.versions` | **bit-exact**                                                            | the digest is precisely the build the eval path resolves to, for the system you asked as                  |
+| `fast.version` / `fast.versions` | **bit-exact**                                                            | the digest is precisely the build `.eval` resolves to, for the system you asked as                        |
 | `fast.latest`                    | **bit-exact**, but see [below](#fastlatest-prefers-servable-over-newest) | the newest version that _has_ a store path, which is not always the newest version                        |
-| `fast.at` / `fast.tip`           | **version-exact**, build-canonical                                       | the right version for that revision, as its build at the newest revision that shipped it                  |
+| `fast.at` / `fast.tip`           | **version-exact**, build-canonical                                       | the right version for that revision, as the newest build of it Hydra finished                             |
 | release (`fast.at "26.05"`)      | **eval-only**                                                            | refuses — the digests are keyed per version, not per branch, see [below](#why-releases-have-no-fast-path) |
 
 Bit-exact is per **system**. A store path is a function of the system it was
@@ -391,6 +391,21 @@ $ nix eval 'github:fzakaria/nixpkgs-multiverse#fast.tip.neovim-unwrapped.version
 Reach for `fast.tip` when you want what the newest indexed revision,
 and `latest` only when you want the newest thing that substitutes
 without an evaluation.
+
+### A failed build serves the one before it
+
+A version's digest is its build at the newest revision that shipped it. When
+Hydra did not finish that build, the digest is the newest build of the same
+version that it did finish, from earlier in the version's newest run of
+revisions ([#28](https://github.com/fzakaria/nixpkgs-multiverse/issues/28)):
+cutter 2.5.0 failed on aarch64-darwin at 02c087f3fe67, and the build from two
+days before still substitutes.
+
+The fake's `.eval` follows it to that revision, so the fake and `.eval` are
+still one build. The eval path does not: `versions.cutter."2.5.0"` is the
+derivation at the newest revision, the one Hydra failed, and differs from
+`fast.versions.cutter."2.5.0".eval` for exactly as long as the version's
+newest build stays broken.
 
 ### Why releases have no fast path
 

@@ -63,7 +63,16 @@ For each `(attribute, version)` pair, at the newest revision that shipped it:
    evaluation while the cache is the union of every jobset Hydra ever ran —
    `firefox` at the tip is in the cache and not in the listing, and every
    darwin path is in this class;
-4. otherwise record a miss. Nothing is guessed: a pair with no proof carries no
+4. otherwise step back through the revisions of the version's newest run in
+   `index/history.json`, newest first, and repeat 1-3 at each, recording the
+   offset of the first one that proves its digest as a third field:
+   `[digest, name, offset]`. Hydra does not finish every build, and a version
+   whose build fails at the tip is still served by the one before it
+   ([#28](https://github.com/fzakaria/nixpkgs-multiverse/issues/28)). The walk
+   stays inside the newest run, the same rule
+   [pins](./design.md#where-this-would-have-been-np-hard) follow: an older run
+   is the version leaving and coming back;
+5. otherwise record a miss. Nothing is guessed: a pair with no proof carries no
    entry, and `fast.*` throws rather than substituting something plausible.
 
 Across 2016 to the tip, 91.5-95.0% of the Linux systems' evaluated attributes
@@ -79,8 +88,9 @@ so Hydra does not rebuild a symlink farm.
 ## The digest is per version, not per revision
 
 The index records **one digest per version**, taken at the newest revision that
-shipped it. That is the build-correct choice: the most patched,
-most recently built, most likely to still substitute, and it is why the
+shipped it and that Hydra finished building. That is the build-correct choice:
+the most patched, most recently built, most likely to still substitute, and it
+is why the
 `fast.*` honesty classes read the way they do: exact-version selectors are
 bit-exact, while revision selectors are version-exact but build-canonical
 (the right version, as its newest build, which may come from a slightly
@@ -215,7 +225,9 @@ scripts live in `tools/`, the evaluators they drive in `nix/`, and
 2. evaluate the new revisions, once per published system
    (`eval-outpaths.sh`, two `nix-eval-jobs` workers on a standard runner);
 3. join the two into digests (`join-eval-listing.py`: pairs that closed before
-   the previous cut are carried over, only the delta is resolved);
+   the previous cut are carried over, only the delta is resolved, and a walk
+   back that reaches the previous cut's tip takes that cut's row, so the hourly
+   run writes what a full run would);
 4. crawl cache.nixos.org for the newly resolved digests and their transitive
    references (`crawl-narinfos.py`, resuming from the rolling crawl graph, and
    crawling the lot again if it restored none);
