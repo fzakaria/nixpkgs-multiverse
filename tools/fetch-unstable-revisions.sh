@@ -246,7 +246,8 @@ if reordered:
     print("OFFSETS SHIFTED: a revision landed before the end of the array.\n"
           "  index/versions.json and index/history.json are now wrong. Rebuild\n"
           "  both from the extraction cache (tools/build-index.sh, then\n"
-          "  tools/build-history.sh) and renumber the store-path artifacts.")
+          "  tools/build-history.sh), then rebuild the store-path artifacts\n"
+          "  on the backfill machine (tools/update-outpaths.sh --full --shard).")
 elif added:
     print("new revisions appended — run tools/build-index.sh --incremental to index them")
 PY
