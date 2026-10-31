@@ -23,6 +23,14 @@
     "aktrrwp394d0hn6py4hbkjndnkqfw271",
     "idea-2024.1"
    ]
+  },
+  "llama-cpp": {
+   "10408": [
+    "alcpp10408hz1nw83dkwxm6d0wndprqk"
+   ],
+   "0.2.0": [
+    "alcpp020kixhz1nw83dkwxm6d0wndprq"
+   ]
   }
  },
  "revisionCount": 3

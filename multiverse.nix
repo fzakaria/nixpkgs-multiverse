@@ -533,6 +533,29 @@ let
   # just to order a list of strings.
   sortVersions = builtins.sort (a: b: builtins.compareVersions a b < 0);
 
+  # The version of `attr`, out of `vers`, that nixpkgs shipped most recently:
+  # the one whose newest revision is the latest. null when `vers` is empty.
+  #
+  # Ranked by when rather than by the version string, because nixpkgs is bound
+  # by no order between version strings. llama-cpp went from build numbers
+  # (10408) to 0.x semver and alacritty from a date (2018-08-30) to 0.17.0, and
+  # compareVersions ranks the old spelling of both above the new one. An
+  # attribute has one version at each revision, so two versions the eval index
+  # knows never tie.
+  #
+  # A version missing from the eval index, which only a store-path index key
+  # can be, ranks below every version the eval index has. Two of those tie on
+  # offset and fall back to the version string.
+  newestShipped =
+    attr: vers:
+    let
+      offs = versionsFor attr;
+      offOf = v: offs.${v} or (-1);
+      shippedAfter =
+        a: b: if offOf a != offOf b then offOf a > offOf b else builtins.compareVersions a b > 0;
+    in
+    builtins.foldl' (acc: v: if acc == null || shippedAfter v acc then v else acc) null vers;
+
   # When each version was present, as run-length ranges of revision offsets —
   # the timeline `index` deliberately does not carry, since it keeps only the
   # newest revision per version.
@@ -1081,6 +1104,14 @@ rec {
   # Every known version of an attribute, oldest first.
   versionsOf = attr: sortVersions (builtins.attrNames (versionsFor attr));
 
+  # The version `latest` resolves to, without resolving it: the one nixpkgs
+  # shipped most recently. For an attribute still in nixpkgs that is the
+  # version at the index tip, and for one nixpkgs removed it is the last
+  # version it shipped. null for an attribute the index does not know.
+  #
+  #   latestVersionOf "llama-cpp"  => "0.7.0", not the build number "10408"
+  latestVersionOf = attr: newestShipped attr (builtins.attrNames (versionsFor attr));
+
   # ---------------------------------------------------------------------------
   # History. Everything below reads index/history.json rather than the index,
   # and nothing above touches it — see the `history` binding for why that split
@@ -1326,8 +1357,8 @@ rec {
     attr: vers: builtins.mapAttrs (ver: _: version attr ver) vers
   ) attrIndex;
 
-  # Newest known version of each attribute, as a plain attrset so it works as a
-  # flake installable:
+  # The version of each attribute nixpkgs shipped most recently — see
+  # latestVersionOf — as a plain attrset so it works as a flake installable:
   #
   #   nix run 'github:fzakaria/nixpkgs-multiverse#latest.python3'
   #   mv.latest.python3
@@ -1339,13 +1370,7 @@ rec {
   #
   # `mapAttrs` is lazy in its values, so this costs one thunk per attribute and
   # resolves nothing until asked.
-  latest = builtins.mapAttrs (
-    attr: vers:
-    let
-      sorted = sortVersions (builtins.attrNames vers);
-    in
-    version attr (builtins.elemAt sorted (builtins.length sorted - 1))
-  ) attrIndex;
+  latest = builtins.mapAttrs (attr: _: version attr (latestVersionOf attr)) attrIndex;
 
   # Exact-match keys for flake attrpaths. flake.nix merges these into
   # legacyPackages, which is what lets plain installable syntax name a
@@ -1434,12 +1459,7 @@ rec {
               mkFake attr ver entry evalDrv
           ) checkedHistory.attrs;
 
-      newestOf =
-        attr: vers:
-        let
-          sorted = sortVersions (builtins.attrNames vers);
-        in
-        fastVersion attr (builtins.elemAt sorted (builtins.length sorted - 1));
+      newestOf = attr: vers: fastVersion attr (newestShipped attr (builtins.attrNames vers));
 
       # Exact-match revision keys, mirroring `installables`: full commit,
       # 12-character prefix, label — plus each revision's date, which the
@@ -1498,19 +1518,20 @@ rec {
         attr: vers: builtins.mapAttrs (ver: _: fastVersion attr ver) vers
       ) attrIndex;
 
-      # Newest indexed version of each attribute, as of the data pin.
+      # The version of each attribute nixpkgs shipped most recently, as of the
+      # data pin.
       #
       # A union rather than the swap `versions` above does, because newestOf
-      # reads "newest" off whichever key set it is handed. Where the
-      # store-path index has the attribute its versions win, so `latest`
-      # keeps meaning the newest version that can be served instantly rather
-      # than the newest that exists — 757 attributes differ between those two
-      # readings, and each would otherwise turn from a fake into a throw, or,
-      # under fastFallback = "eval", into a quiet 378 MB fetch inside fast.
-      # Where it does not, the eval index supplies the key, and the newest
-      # known version resolves through fastMissing exactly as it does under
-      # `versions`. That second half is pure addition: those attributes had
-      # no key here at all.
+      # ranks whichever key set it is handed. Where the store-path index has
+      # the attribute its versions win, so `latest` keeps meaning the newest
+      # version that can be served instantly rather than the newest that
+      # exists — 408 attributes differed between those two readings on the
+      # data-20261030 pin, and each would otherwise turn from a fake into a
+      # throw, or, under fastFallback = "eval", into a quiet 378 MB fetch
+      # inside fast. Where it does not, the eval index supplies the key, and
+      # the newest known version resolves through fastMissing exactly as it
+      # does under `versions`. That second half is pure addition: those
+      # attributes had no key here at all.
       latest = builtins.mapAttrs newestOf (attrIndex // fastIndex);
 
       # The newest indexed revision, as fakes. Spelled as the selector it is,

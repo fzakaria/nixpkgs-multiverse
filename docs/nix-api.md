@@ -14,6 +14,20 @@ $ nix run 'github:fzakaria/nixpkgs-multiverse#latest.python3' -- --version
 Python 3.14.6
 ```
 
+`latest` is the version nixpkgs shipped most recently, not the greatest version
+string. The two differ wherever upstream renumbered its releases: llama-cpp
+went from build numbers (`10408`) to 0.x semver, and `latest.llama-cpp` is the
+0.x release the newest revision ships
+([#30](https://github.com/fzakaria/nixpkgs-multiverse/issues/30)). For an
+attribute nixpkgs removed, `latest` is the last version it shipped.
+`latestVersionOf` names that version without resolving it:
+
+```console
+$ nix eval --apply 'f: f "llama-cpp"' \
+   github:fzakaria/nixpkgs-multiverse#multiverse.x86_64-linux.latestVersionOf
+"0.7.0"
+```
+
 You can access also a package by its revision, which is a commit hash, a 12-character prefix, a `date-commit` label, the release version or tip.
 
 ```console
@@ -512,6 +526,8 @@ nix-repl> (mv.at "13.10").hello.name
 ```nix
 # every known version, version-aware sort
 mv.versionsOf "python3"
+# the version nixpkgs shipped most recently, which latest resolves to
+mv.latestVersionOf "python3"
 # every known revision that shipped a version
 mv.revOf "python3" "3.8.9"
 # unstable as it stood N days before any anchor

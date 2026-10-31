@@ -22,6 +22,7 @@ in
   lock = evalTest "test-lock" ../tests/lock.nix;
   minimize = evalTest "test-minimize" ../tests/minimize.nix;
   fast = evalTest "test-fast" ../tests/fast.nix;
+  latest = evalTest "test-latest" ../tests/latest.nix;
   mirrors = evalTest "test-mirrors" ../tests/mirrors.nix;
   compose = (import ../tests/compose.nix { inherit system; }).env;
 
