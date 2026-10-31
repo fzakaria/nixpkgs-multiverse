@@ -103,6 +103,26 @@ fn answers_settled_questions() {
     assert!(!out.status.success());
 }
 
+/// `query versions` lists versions in the order nixpkgs shipped them, not in
+/// version-string order. llama-cpp's build number 10408 was last shipped before
+/// 0.2.0 replaced it, and both runs are closed, so the order is settled even
+/// though "10408" outranks "0.2.0" as a version.
+#[test]
+fn lists_versions_in_shipping_order() {
+    let Some(mvs) = mvs() else { return };
+
+    let listed: serde_json::Value =
+        serde_json::from_str(&mvs.stdout(&["--json", "query", "versions", "llama-cpp"])).unwrap();
+    let order: Vec<&str> = listed["versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["version"].as_str().unwrap())
+        .collect();
+    let position = |v: &str| order.iter().position(|o| *o == v).unwrap();
+    assert!(position("10408") < position("0.2.0"), "{order:?}");
+}
+
 /// A release is refused wherever history is involved, since a release name is a
 /// channel tip that moves and has no offset — the same refusal `multiverse.nix`
 /// makes — but still resolves as a revision lookup.

@@ -23,11 +23,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::date;
-use crate::db::Index;
+use crate::db::{Index, Run};
 use crate::output::{self, Cell, Table};
 use crate::query::Format;
 use crate::solve::{self, block_for, newest_pinnable, spans_for, Constraint};
-use crate::version;
 
 /// The lock file's name, and the one `multiverse.lib.readLock` expects.
 pub const LOCK_FILE: &str = "multiverse.lock";
@@ -489,6 +488,72 @@ mod tests {
         assert!(err.contains("version 99"), "{err}");
         std::fs::remove_file(&path).ok();
     }
+
+    fn run(version: &str, first: i64, last: i64) -> Run {
+        Run {
+            version: version.to_string(),
+            first,
+            last,
+        }
+    }
+
+    /// What `lock status` counts as behind: every version nixpkgs shipped after
+    /// the pinned revision, by when it shipped. Checked on the llama-cpp shape,
+    /// where a version comparison ranks the old build number above every newer
+    /// 0.x release, and on a version that left and came back.
+    #[test]
+    fn counts_versions_shipped_since_the_pin() {
+        // llama-cpp went from build numbers to 0.x semver. A pin on build 10408
+        // is two versions behind, though "10408" outranks both as a string.
+        let renumbered = vec![
+            run("10273", 1525, 1530),
+            run("10408", 1531, 1537),
+            run("0.2.0", 1538, 1539),
+            run("0.3.0", 1540, 1544),
+        ];
+        assert_eq!(
+            shipped_since(&renumbered, 1537, "10408"),
+            vec!["0.2.0", "0.3.0"]
+        );
+        assert!(shipped_since(&renumbered, 1544, "0.3.0").is_empty());
+
+        // kubectl 1.19.3 and 1.19.4 alternated. A pin on 1.19.4 at 508 is
+        // behind the 1.19.3 that came back after it, counted once, and the
+        // pinned version's own later run is not a newer version.
+        let reverted = vec![
+            run("1.19.3", 501, 507),
+            run("1.19.4", 508, 508),
+            run("1.19.3", 509, 509),
+            run("1.19.4", 510, 520),
+        ];
+        assert_eq!(shipped_since(&reverted, 508, "1.19.4"), vec!["1.19.3"]);
+        assert!(shipped_since(&reverted, 520, "1.19.4").is_empty());
+    }
+}
+
+/// The versions nixpkgs shipped after the revision at offset `pinned`, other
+/// than `pinned_version`, in the order they first shipped after it. `runs` is
+/// ordered by first revision, as `Index::runs_of` returns it.
+///
+/// Read off when each version shipped rather than off the version string.
+/// llama-cpp's build number 10408 outranks every 0.x release that replaced it,
+/// so a version comparison would call a pin on 10408 current. A version that
+/// left and came back after the pin counts once, since nixpkgs moved to it
+/// again.
+fn shipped_since(runs: &[Run], pinned: i64, pinned_version: &str) -> Vec<String> {
+    let mut since: Vec<String> = Vec::new();
+    for run in runs {
+        // A run that began at or before the pin is history the pin already
+        // saw, and the pinned version's own later runs are not newer versions.
+        if run.first <= pinned || run.version == pinned_version {
+            continue;
+        }
+        if since.contains(&run.version) {
+            continue;
+        }
+        since.push(run.version.clone());
+    }
+    since
 }
 
 /// `mvs lock status` — how far behind each pin has fallen.
@@ -515,21 +580,27 @@ pub fn status(index: &Index, path: &Path, format: Format) -> Result<()> {
         };
         let newest = pin_for(index, &constraint)?;
 
+        // The revision the pin names, as the offset "behind" is measured from.
+        let pinned = index
+            .revision_by_prefix(&pin.rev)?
+            .ok_or_else(|| {
+                anyhow!(
+                    "{attr} is pinned to {}, which the index does not have",
+                    pin.label
+                )
+            })?
+            .off;
+
         // Versions behind counts what is actually reachable under the pin's own
         // constraint: a pin held at python3@3.8 is not "6 versions behind" 3.14,
         // it is exactly where it was asked to be.
-        let mut newer: Vec<String> = index
-            .runs_of(attr)?
+        let newer: Vec<String> = shipped_since(&index.runs_of(attr)?, pinned, &pin.version)
             .into_iter()
-            .filter(|r| match &pin.constraint {
-                Some(prefix) => crate::solve::matches(&r.version, prefix),
+            .filter(|v| match &pin.constraint {
+                Some(prefix) => crate::solve::matches(v, prefix),
                 None => true,
             })
-            .map(|r| r.version)
-            .filter(|v| version::compare(v, &pin.version) == std::cmp::Ordering::Greater)
             .collect();
-        newer.sort_by(|a, b| version::compare(a, b));
-        newer.dedup();
 
         rows.push(json!({
             "attr": attr,

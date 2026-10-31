@@ -23,16 +23,16 @@ the same answers.
 
 ## Reading the index
 
-| command                       | answers                                        |
-| ----------------------------- | ---------------------------------------------- |
-| `mvs query versions <attr>`   | every version, oldest first, with its lifetime |
-| `mvs query when <attr> <ver>` | first and last sighting, every run, the gaps   |
-| `mvs query at <sel> <attr>`   | the version that revision shipped              |
-| `mvs query gone <attr>`       | last sighting, or still current                |
-| `mvs query rev <sel>`         | resolve any selector to commit, date and label |
-| `mvs query search <pattern>`  | attribute search                               |
-| `mvs query diff <a> <b>`      | added / removed / upgraded / downgraded        |
-| `mvs query stats`             | headline numbers                               |
+| command                       | answers                                                             |
+| ----------------------------- | ------------------------------------------------------------------- |
+| `mvs query versions <attr>`   | every version, in the order nixpkgs shipped them, with its lifetime |
+| `mvs query when <attr> <ver>` | first and last sighting, every run, the gaps                        |
+| `mvs query at <sel> <attr>`   | the version that revision shipped                                   |
+| `mvs query gone <attr>`       | last sighting, or still current                                     |
+| `mvs query rev <sel>`         | resolve any selector to commit, date and label                      |
+| `mvs query search <pattern>`  | attribute search                                                    |
+| `mvs query diff <a> <b>`      | added / removed / upgraded / downgraded                             |
+| `mvs query stats`             | headline numbers                                                    |
 
 A _selector_ is the same vocabulary `at` takes: `tip`, a release (`26.05`), a
 date (`2022-03-15`), a commit prefix, or a revision label.

@@ -108,17 +108,20 @@ pub fn unknown_attr(index: &Index, attr: &str) -> Result<anyhow::Error> {
     ))
 }
 
-/// `mvs query versions <attr>` — every version, oldest first, with its lifetime.
+/// `mvs query versions <attr>` — every version, least recently shipped first,
+/// with its lifetime.
 pub fn versions(index: &Index, attr: &str, format: Format) -> Result<()> {
     let runs = index.runs_of(attr)?;
     if runs.is_empty() {
         return Err(unknown_attr(index, attr)?);
     }
 
+    // Ordered by the last revision each version shipped in, never by the
+    // version string: upstreams renumber, and llama-cpp's build number 10408
+    // outranks the 0.x release that replaced it. The version nixpkgs ships now
+    // lands on the bottom row, the same version `latest` resolves to.
     let mut grouped = group_by_version(runs);
-    // SQLite cannot sort by Nix version ordering, so this is the one place the
-    // ordering has to be applied after the query rather than in it.
-    grouped.sort_by(|(a, _), (b, _)| version::compare(a, b));
+    grouped.sort_by_key(|(_, runs)| runs.iter().map(|r| r.last).max());
 
     let lifetimes = grouped
         .into_iter()
@@ -129,13 +132,17 @@ pub fn versions(index: &Index, attr: &str, format: Format) -> Result<()> {
         return output::print_json(json!({ "attr": attr, "versions": lifetimes }));
     }
 
-    let oldest = &lifetimes[0];
-    let newest = lifetimes.last().unwrap();
+    // The span of the whole attribute. Read across every row rather than off
+    // the first and last ones, because the first row is the version that
+    // stopped shipping earliest, not necessarily the one that started
+    // earliest. ISO dates order as strings.
+    let earliest = lifetimes.iter().map(|l| &l.first).min().unwrap();
+    let latest = lifetimes.iter().map(|l| &l.last).max().unwrap();
     anstream::println!(
         "{attr} · {} · {} .. {}",
         output::plural(lifetimes.len(), "version"),
-        oldest.first,
-        newest.last
+        earliest,
+        latest
     );
 
     let mut table = Table::new(&["VERSION", "FIRST", "LAST", "REVS", ""]);
