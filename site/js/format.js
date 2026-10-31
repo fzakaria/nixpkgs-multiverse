@@ -1,4 +1,4 @@
-// Pure formatting and comparison helpers, shared across modules. Nothing in
+// Pure formatting helpers, shared across modules. Nothing in
 // this module touches the DOM, the network, or component state.
 
 import { ARCHIVE_URL, REV_ABBREV } from "./config.js";
@@ -10,24 +10,6 @@ export const label = (r) => `${r.date}-${r.rev.slice(0, REV_ABBREV)}`;
 // it under, so this always resolves to a listing.
 export const archiveFor = (channelDir, name) =>
   `${ARCHIVE_URL}${channelDir}/${encodeURIComponent(name)}/`;
-
-// Nix-style version ordering: split into digit and non-digit runs, compare
-// digit runs numerically. Enough to put 3.12.10 after 3.12.7.
-export function compareVersions(a, b) {
-  const chunks = (s) => s.match(/\d+|\D+/g) || [];
-  const ca = chunks(a),
-    cb = chunks(b);
-  for (let i = 0; i < Math.max(ca.length, cb.length); i++) {
-    const x = ca[i] ?? "",
-      y = cb[i] ?? "";
-    if (x === y) continue;
-    const nx = /^\d+$/.test(x),
-      ny = /^\d+$/.test(y);
-    if (nx && ny) return Number(x) - Number(y);
-    return x < y ? -1 : 1;
-  }
-  return 0;
-}
 
 // A valid id from arbitrary text, for aria-controls.
 export const domId = (s) => "b-" + s.replace(/[^a-zA-Z0-9_-]/g, "_");

@@ -47,6 +47,32 @@ test("the packages view draws a version table and both charts", async ({
   ).toBeVisible();
 });
 
+// An attribute whose upstream renumbered: llama-cpp went from build numbers
+// (10408) to 0.x semver, so the greatest version string is not the version
+// nixpkgs ships today.
+const RENUMBERED_ATTR = "llama-cpp";
+
+// The characters of a commit a revision label carries — REV_ABBREV in
+// site/js/config.js.
+const REV_ABBREV = 12;
+
+test("the version table puts the most recently shipped version first", async ({
+  page,
+}) => {
+  // Loads a package whose version strings and shipping order disagree, and
+  // asserts the top row names the newest indexed revision. Sorted by version
+  // string, the top row would be build 10408, last shipped in August 2026.
+  const revisions = await (await page.request.get("/revisions.json")).json();
+  const tip = revisions[revisions.length - 1];
+
+  await page.goto(`/?pkg=${RENUMBERED_ATTR}`);
+
+  const top = page.locator(".row.cols-ver").first();
+  await expect(top).toContainText(
+    `${tip.date}-${tip.rev.slice(0, REV_ABBREV)}`,
+  );
+});
+
 test("the revisions view draws its first window of rows", async ({ page }) => {
   // The window is what keeps the page from laying out 1,500 rows, so its size
   // is behaviour worth pinning, not an implementation detail.

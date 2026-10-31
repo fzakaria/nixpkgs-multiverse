@@ -22,13 +22,7 @@ import {
   refVer,
   runsOf,
 } from "../data.js";
-import {
-  archiveFor,
-  compareVersions,
-  domId,
-  fmtBytes,
-  label,
-} from "../format.js";
+import { archiveFor, domId, fmtBytes, label } from "../format.js";
 import { Link, Nav } from "../router.js";
 import { Row, Cmd, useLinkableRow, useBulk, nextSeq } from "../ui.js";
 import {
@@ -334,9 +328,11 @@ export function PackageDetail({ attr, route, revisions, navigate }) {
   if (!revisions.length)
     return html`<div id="status" class="muted">Loading revisions…</div>`;
 
-  const vers = Object.entries(versions).sort((a, b) =>
-    compareVersions(b[0], a[0]),
-  ); // newest first
+  // Most recently shipped first, by the newest revision shipping each version,
+  // never by the version string: upstreams renumber, and llama-cpp's build
+  // number 10408 outranks the 0.x semver release that replaced it. An attr
+  // has one version per revision, so no two rows share an offset.
+  const vers = Object.entries(versions).sort((a, b) => b[1] - a[1]);
 
   // Store metadata, when the shard has landed: per-version meta entries, the
   // shard's intern table for references, and this attr's reverse deps.
@@ -417,8 +413,8 @@ function WeightChart({ attr, meta, vers }) {
   const [ref, width] = useWidth();
   // Chronological by shipping revision, NOT by version number: release
   // trains overlap (firefox ESR ships beside current), and this chart is
-  // about weight over TIME — so its x order can differ from the version
-  // table's, which is version-number order.
+  // about weight over TIME. The version table uses the same shipping order,
+  // newest first, where this chart runs oldest to newest.
   const rows = vers
     .slice()
     .sort((a, b) => a[1] - b[1])
@@ -546,7 +542,10 @@ function Timeline({
     </p>`;
   if (!hist) return html`<p class="muted">Loading timeline…</p>`;
 
-  const vers = Object.keys(hist).sort((a, b) => compareVersions(b, a));
+  // Most recently shipped on top, by the last revision each version shipped
+  // in, which puts the rows in the same order as the version table.
+  const lastSeen = (v) => Math.max(...runsOf(hist[v]).map(([, e]) => e));
+  const vers = Object.keys(hist).sort((a, b) => lastSeen(b) - lastSeen(a));
   if (!vers.length) return null;
 
   // The axis spans this package's own lifetime, not the whole index. A package
