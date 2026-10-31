@@ -211,7 +211,7 @@ There are some differences to be aware of and they depends on the selector:
 | selector                         | class                                                                    | what it promises                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `fast.version` / `fast.versions` | **bit-exact**                                                            | the digest is precisely the build `.eval` resolves to, for the system you asked as                        |
-| `fast.latest`                    | **bit-exact**, but see [below](#fastlatest-prefers-servable-over-newest) | the newest version that _has_ a store path, which is not always the newest version                        |
+| `fast.latest`                    | **bit-exact**, but see [below](#fastlatest-prefers-servable-over-newest) | the most recent version that _has_ a store path, which is not always the most recent version              |
 | `fast.at` / `fast.tip`           | **version-exact**, build-canonical                                       | the right version for that revision, as the newest build of it Hydra finished                             |
 | release (`fast.at "26.05"`)      | **eval-only**                                                            | refuses — the digests are keyed per version, not per branch, see [below](#why-releases-have-no-fast-path) |
 
@@ -247,7 +247,8 @@ so there is no surprise fetch, however this can be tuned per `mkMultiverse`:
 mkMultiverse {
   system = "x86_64-linux";
   # unmatched pairs fall back to the real
-  # derivation silently (default: "throw")
+  # derivation silently, and fast.latest picks
+  # the version latest does (default: "throw")
   fastFallback = "eval";
   # read the data files from a directory instead
   # of fetching them (see Mirrors below)
@@ -374,37 +375,38 @@ pin). Use the eval path: (at "tip").vscode
 
 ### `fast.latest` prefers servable over newest
 
-`latest` means _the newest version that has a store path_, not the newest
-version that exists. Where the two differ, the servable one wins, so that
-`latest` keeps its promise of resolving instantly.
+By default `fast.latest` means _the most recent version that has a store
+path_, not the most recent version that exists. Where the two differ, the
+servable one wins, so that `fast.latest` keeps its promise of resolving
+instantly.
 
 The cost is that `fast.latest` can be far behind. Several hundred attributes
 currently resolve to an older version than the index's newest, many of them
 by a whole major version or more.
 
-For instance, `neovim`:
+For instance, `claude-agent-acp`
+([#29](https://github.com/fzakaria/nixpkgs-multiverse/issues/29)):
 
 ```console
-$ nix eval 'github:fzakaria/nixpkgs-multiverse#fast.latest.neovim.version'
-"0.2.1"
+$ nix eval 'github:fzakaria/nixpkgs-multiverse#fast.latest.claude-agent-acp.version'
+"0.21.0"
 
-$ nix eval 'github:fzakaria/nixpkgs-multiverse#versionAt' --apply 'f: f "neovim" "tip"'
-"0.12.4"
+$ nix eval 'github:fzakaria/nixpkgs-multiverse#versionAt' --apply 'f: f "claude-agent-acp" "tip"'
+"0.93.0"
 ```
 
-0.2.1 is from 2017 and is not an accident of matching. Until December 2017
-`neovim` was an ordinary package and Hydra built it; the wrapper that
-replaced it carries `hydraPlatforms = [ ]`. Only
-`neovim-unwrapped` is built, and that is the attribute to reach for:
+0.21.0 is not an accident of matching. `claude-agent-acp` is Apache-2.0, but
+from 0.32.0 on it depends on `claude-code`, which is unfree. Hydra evaluates
+nixpkgs with `allowUnfree = false`, so it has not built a version since.
 
-```console
-$ nix eval 'github:fzakaria/nixpkgs-multiverse#fast.tip.neovim-unwrapped.version'
-"0.12.4"
-```
+Importing with `fastFallback = "eval"` changes the answer. `fast.latest` then
+picks the version `latest` does, as a fake where that version has a store path
+and as the eval derivation where it does not. For `claude-agent-acp` that is
+0.93.0, evaluated.
 
-Reach for `fast.tip` when you want what the newest indexed revision,
-and `latest` only when you want the newest thing that substitutes
-without an evaluation.
+Reach for `fast.tip` when you want what the newest indexed revision ships,
+and the default `fast.latest` only when you want the newest thing that
+substitutes without an evaluation.
 
 ### A failed build serves the one before it
 

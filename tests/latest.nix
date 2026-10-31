@@ -45,6 +45,14 @@ let
 
   mv = import ../multiverse.nix { inherit system fetchRevision fetchArtifact; };
 
+  # The same multiverse with transparent fallback, which changes the key set
+  # `fast.latest` ranks: every version the eval index knows, not only the ones
+  # with a store path.
+  mvEval = import ../multiverse.nix {
+    inherit system fetchRevision fetchArtifact;
+    fastFallback = "eval";
+  };
+
   # The commit at an offset into revisions.json, and the newest one the index
   # covers.
   revAt = i: (builtins.elemAt mv.revisions i).rev;
@@ -79,7 +87,7 @@ assert mv.latest.MPlayer.servedRev == revAt mv.index.attrs.MPlayer."1.1";
 # A name the index has never seen has no newest version.
 assert mv.latestVersionOf "not-an-attribute" == null;
 
-# fast.latest ranks only the versions that have a store path. The
+# fast.latest, by default, ranks only the versions that have a store path. The
 # fixture holds llama-cpp at 10408 and at 0.2.0, the build-number spelling and
 # the first semver release after it, so recency picks 0.2.0 and the version
 # string would pick 10408.
@@ -89,6 +97,17 @@ assert mv.fast.latest.llama-cpp.version == "0.2.0";
 # version is still the newest there is to serve. `jetbrains.idea` 2024.1 is
 # only in the fixture.
 assert mv.fast.latest."jetbrains.idea".version == "2024.1";
+
+# Under fastFallback = "eval", fast.latest picks the same version `latest`
+# does. A pair with a store path still comes back as a fake, recognisable by
+# its `.eval`.
+assert mvEval.fast.latest.hello.version == mv.latestVersionOf "hello";
+assert mvEval.fast.latest.hello ? eval;
+
+# And a pair without one falls back to the eval derivation at the tip, rather
+# than to the older version the fixture happens to have a path for.
+assert !(mvEval.fast.latest.llama-cpp ? eval);
+assert mvEval.fast.latest.llama-cpp.servedRev == tipRev;
 
 {
   llamaCpp = mv.latestVersionOf "llama-cpp";

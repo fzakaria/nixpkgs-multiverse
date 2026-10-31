@@ -1519,20 +1519,27 @@ rec {
       ) attrIndex;
 
       # The version of each attribute nixpkgs shipped most recently, as of the
-      # data pin.
+      # data pin, out of the versions fast is allowed to pick from.
       #
       # A union rather than the swap `versions` above does, because newestOf
-      # ranks whichever key set it is handed. Where the store-path index has
-      # the attribute its versions win, so `latest` keeps meaning the newest
-      # version that can be served instantly rather than the newest that
-      # exists — 408 attributes differed between those two readings on the
-      # data-20261030 pin, and each would otherwise turn from a fake into a
-      # throw, or, under fastFallback = "eval", into a quiet 378 MB fetch
-      # inside fast. Where it does not, the eval index supplies the key, and
-      # the newest known version resolves through fastMissing exactly as it
-      # does under `versions`. That second half is pure addition: those
-      # attributes had no key here at all.
-      latest = builtins.mapAttrs newestOf (attrIndex // fastIndex);
+      # ranks whichever key set it is handed, and which index wins the union
+      # follows fastFallback.
+      #
+      # Under "throw", where the store-path index has the attribute its
+      # versions win, so `latest` means the newest version that can be served
+      # instantly rather than the newest that exists. 408 attributes differed
+      # between those two readings on the data-20261030 pin, and each would
+      # otherwise turn from a fake into a throw. Where it does not, the eval
+      # index supplies the key, and the newest known version resolves through
+      # fastMissing exactly as it does under `versions`.
+      #
+      # Under "eval" the eval index wins, so `latest` picks the version the
+      # eval `latest` does: a fake where that version has a store path, and
+      # the eval derivation where it does not. An importer who opted into the
+      # fallback asked for the newest version, not the newest one Hydra built.
+      latest = builtins.mapAttrs newestOf (
+        if checkedFastFallback == "eval" then fastIndex // attrIndex else attrIndex // fastIndex
+      );
 
       # The newest indexed revision, as fakes. Spelled as the selector it is,
       # so `fast.tip` and `fast.at "tip"` cannot drift apart: one definition,
