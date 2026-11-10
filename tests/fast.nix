@@ -112,6 +112,18 @@ let
   # 1500, so the fake and its escape hatch stay one build.
   cutter = mvStandIn.fast.version "cutter" "2.4.1";
 
+  # A pair still current when the tip snapshot was cut, read after the index
+  # has moved past that cut. The fixture's tip snapshot claims 1578 revisions
+  # while the committed index has more, so the snapshot's digest for hello
+  # 2.12.3 is the build at offset 1577, and hello 2.12.3's own newest revision
+  # in the index is later than that. The fake's `.eval` must be the
+  # derivation at 1577, the snapshot's own tip, rather than at the index's
+  # newest revision for the version: issue #32, where the two were different
+  # builds of the same version because the daily data cut lagged the index.
+  fixtureTipRevisionCount = 1578;
+  laggedTipOffset = fixtureTipRevisionCount - 1;
+  laggedTipHello = mvStandIn.fast.version "hello" "2.12.3";
+
   hello = mv.fast.version "hello" "2.12.2";
   ffmpeg = mv.fast.version "ffmpeg" "9.0";
   tipHello = mv.fast.tip.hello;
@@ -222,6 +234,13 @@ assert
 assert cutter.name == "cutter-2.4.1" && cutter.version == "2.4.1";
 assert !(builtins.tryEval cutter.drvPath).success;
 assert cutter.eval.builtAt == revAt 1500;
+
+# A tip-snapshot row resolves `.eval` at the revision the snapshot was cut at,
+# even once the index has moved past it. The committed index must be ahead of
+# the fixture for this to test anything, which it always is: the fixture's
+# count is fixed and revisions.json only grows.
+assert mv.index.revisionCount > laggedTipOffset + 1;
+assert laggedTipHello.eval.builtAt == revAt laggedTipOffset;
 
 # The honesty contract: misses throw, releases refuse, drvPath says why.
 assert missThrows;

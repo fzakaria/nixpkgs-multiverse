@@ -215,6 +215,14 @@ There are some differences to be aware of and they depends on the selector:
 | `fast.at` / `fast.tip`           | **version-exact**, build-canonical                                       | the right version for that revision, as the newest build of it Hydra finished                             |
 | release (`fast.at "26.05"`)      | **eval-only**                                                            | refuses — the digests are keyed per version, not per branch, see [below](#why-releases-have-no-fast-path) |
 
+Bit-exact is as of the **data pin**. The pinned store-path data is cut once a
+UTC day, while the index advances with every channel bump. A version still
+current at the cut can get a new build from a later bump that changes its
+dependencies, and the eval path (`versions.foo."1.2"`) resolves to that newer
+build. The fake and its `.eval` stay on the build the pin recorded, which
+Hydra is known to have finished
+([#32](https://github.com/fzakaria/nixpkgs-multiverse/issues/32)).
+
 Bit-exact is per **system**. A store path is a function of the system it was
 evaluated for, so the artifacts are published one file per system and `fast.*`
 serves the file matching the `system` the multiverse was imported with. A
