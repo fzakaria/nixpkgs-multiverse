@@ -1580,5 +1580,18 @@ rec {
 
       # The selector form: fast.at "2022-03-15", fast.at "dc460ec76cbf".
       at = fastAt;
+
+      # The revision the data pin's tip snapshot was cut at: the revisions.json
+      # entry plus its label. Every tip-snapshot fake was built there and its
+      # `.eval` resolves there (see fastEvalDrv), so this is the base nixpkgs
+      # that matches them:
+      #
+      #   import (flakeAt fast.revision.label) { inherit system; }
+      #
+      # Closed fakes come from older revisions, by design. This is not `tip`,
+      # which follows the index and runs ahead of the pin for most of a day.
+      revision = revAt fastTipOffset // {
+        label = labelOf fastTipOffset;
+      };
     };
 }

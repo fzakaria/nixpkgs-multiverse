@@ -223,6 +223,14 @@ build. The fake and its `.eval` stay on the build the pin recorded, which
 Hydra is known to have finished
 ([#32](https://github.com/fzakaria/nixpkgs-multiverse/issues/32)).
 
+`fast.revision` names the revision the pin was cut at, as its `revisions.json`
+entry plus a `label`. Use it for a base nixpkgs that matches the fakes of
+still-current versions; it is usually behind `fast.tip`:
+
+```nix
+pkgs = import (mv.flakeAt mv.fast.revision.label) { inherit system; };
+```
+
 Bit-exact is per **system**. A store path is a function of the system it was
 evaluated for, so the artifacts are published one file per system and `fast.*`
 serves the file matching the `system` the multiverse was imported with. A

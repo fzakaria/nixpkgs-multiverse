@@ -242,6 +242,15 @@ assert cutter.eval.builtAt == revAt 1500;
 assert mv.index.revisionCount > laggedTipOffset + 1;
 assert laggedTipHello.eval.builtAt == revAt laggedTipOffset;
 
+# `fast.revision` names that same cut, so a base nixpkgs built from it matches
+# the tip-snapshot fakes (issue #33). Its label is one of the revision keys
+# `fast` and `at` already accept, so it round-trips as a selector. It is not
+# `fast.tip`, which follows the index and is ahead of the cut here.
+assert mv.fast.revision.rev == revAt laggedTipOffset;
+assert mv.fast.revision.date == (builtins.elemAt mv.revisions laggedTipOffset).date;
+assert mv.fast ? ${mv.fast.revision.label};
+assert mv.fast.revision.rev != revAt (mv.index.revisionCount - 1);
+
 # The honesty contract: misses throw, releases refuse, drvPath says why.
 assert missThrows;
 assert releaseRefuses;
