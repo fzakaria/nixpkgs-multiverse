@@ -9472,5 +9472,11 @@
   "date": "2026-11-07",
   "name": "nixos-26.11pre1113206.f4a03c008967",
   "narHash": "sha256-ziZn2PvCJE5JEEpqTdxXwJpPB+L3YqoCpTAMCzyaP3U="
+ },
+ {
+  "rev": "177d0540942fb205af6993b1d5fa0b57799e09f8",
+  "date": "2026-11-09",
+  "name": "nixos-26.11pre1114946.177d0540942f",
+  "narHash": "sha256-SvB8u5qaJAOwZZyZciqTVOg/rBoUs2w0sFTU6ED51AQ="
  }
 ]
