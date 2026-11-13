@@ -218,7 +218,8 @@ There are some differences to be aware of and they depends on the selector:
 Bit-exact is as of the **data pin**. The pinned store-path data is cut once a
 UTC day, while the index advances with every channel bump. A version still
 current at the cut can get a new build from a later bump that changes its
-dependencies, and the eval path (`versions.foo."1.2"`) resolves to that newer
+dependencies, and a version that had closed by the cut can come back through a
+revert. Either way the eval path (`versions.foo."1.2"`) resolves to the newer
 build. The fake and its `.eval` stay on the build the pin recorded, which
 Hydra is known to have finished
 ([#32](https://github.com/fzakaria/nixpkgs-multiverse/issues/32)).

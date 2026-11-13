@@ -97,6 +97,7 @@ let
         {
           cutter = { type = "derivation"; builtAt = "${r.rev}"; };
           hello = { type = "derivation"; builtAt = "${r.rev}"; };
+          patchelf = { type = "derivation"; builtAt = "${r.rev}"; };
         }
       '';
       lastModified = 0;
@@ -118,11 +119,18 @@ let
   # 2.12.3 is the build at offset 1577, and hello 2.12.3's own newest revision
   # in the index is later than that. The fake's `.eval` must be the
   # derivation at 1577, the snapshot's own tip, rather than at the index's
-  # newest revision for the version: issue #32, where the two were different
-  # builds of the same version because the daily data cut lagged the index.
+  # newest revision for the version.
   fixtureTipRevisionCount = 1578;
   laggedTipOffset = fixtureTipRevisionCount - 1;
   laggedTipHello = mvStandIn.fast.version "hello" "2.12.3";
+
+  # A closed row whose version the index ships again after the cut. The
+  # committed index has patchelf 0.15.2 through 1569, another version from
+  # 1570 to 1577, and 0.15.2 again from 1578. The fixture's closed digest is
+  # the build at 1569, the version's newest revision at or before the cut at
+  # 1577, and the fake's `.eval` must resolve there too.
+  revertedClosedOffset = 1569;
+  revertedPatchelf = mvStandIn.fast.version "patchelf" "0.15.2";
 
   hello = mv.fast.version "hello" "2.12.2";
   ffmpeg = mv.fast.version "ffmpeg" "9.0";
@@ -241,6 +249,13 @@ assert cutter.eval.builtAt == revAt 1500;
 # count is fixed and revisions.json only grows.
 assert mv.index.revisionCount > laggedTipOffset + 1;
 assert laggedTipHello.eval.builtAt == revAt laggedTipOffset;
+
+# A closed row resolves `.eval` at the version's newest revision as of the
+# cut, even when the index ships the version again after the cut. The first
+# assertion checks the index still does, without which the second tests only
+# the plain closed-row case above.
+assert mv.index.attrs.patchelf."0.15.2" > laggedTipOffset;
+assert revertedPatchelf.eval.builtAt == revAt revertedClosedOffset;
 
 # `fast.revision` names that same cut, so a base nixpkgs built from it matches
 # the tip-snapshot fakes (issue #33). Its label is one of the revision keys

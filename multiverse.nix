@@ -986,23 +986,50 @@ let
   # usually behind the index's own tip.
   fastTipOffset = fastTip.revisionCount - 1;
 
+  # The newest revision at or before the tip snapshot's cut that shipped `attr`
+  # at `ver`, or null when the history has none. A run that straddles the cut
+  # is clipped to the cut, so a version current at the cut answers the cut
+  # itself.
+  newestOffsetAtCut =
+    attr: ver:
+    let
+      runs = runsOf attr ver;
+
+      # Each run's last revision the cut could have seen; a run that starts
+      # after the cut contributes nothing.
+      seen = builtins.concatMap (
+        r:
+        let
+          first = builtins.elemAt r 0;
+          last = builtins.elemAt r 1;
+        in
+        if first > fastTipOffset then
+          [ ]
+        else if last > fastTipOffset then
+          [ fastTipOffset ]
+        else
+          [ last ]
+      ) (if runs == null then [ ] else runs);
+    in
+    builtins.foldl' (best: o: if best == null || o > best then o else best) null seen;
+
   # The real derivation behind a fake for `attr` at `ver`: the one at the
-  # revision its build came from, so the fake and its `.eval` stay one build
-  # instead of the same version built twice.
+  # revision its build came from, so the fake and its `.eval` are one build.
   #
-  # A walked row records that revision as its offset. A tip-snapshot row was
-  # resolved at the snapshot's own tip, which is not the version's newest
-  # revision once the index has moved past the cut: a bump that changes the
-  # version's closure without changing the version gives it a new build that
-  # the snapshot never saw, and that Hydra may not have finished (issue #32).
-  # A closed row's version stopped moving before the cut, so its newest
-  # revision in the index is the one its digest came from.
+  # A walked row records that revision as its offset. Every other row was
+  # resolved at the version's newest revision as of the data pin's cut. The
+  # index can ship the same version again after the cut, rebuilt against a
+  # new closure or reintroduced by a revert, and Hydra may not have finished
+  # that newer build. Such a row resolves at the newest revision the cut saw.
   fastEvalDrv =
     attr: ver: entry:
+    let
+      atCut = newestOffsetAtCut attr ver;
+    in
     if entry != null && builtins.length entry > 2 then
       resolveIn instances.${toString (builtins.elemAt entry 2)} attr
-    else if entry != null && (fastTip.attrs.${attr} or { }) ? ${ver} then
-      resolveIn instances.${toString fastTipOffset} attr
+    else if entry != null && atCut != null then
+      resolveIn instances.${toString atCut} attr
     else
       versionDrv attr ver;
 
@@ -1411,8 +1438,9 @@ rec {
   #   digest is precisely the build the fake's `.eval` resolves to. That is
   #   the eval path's own build, with two exceptions where both are an
   #   earlier build of the same version (see fastEvalDrv): Hydra did not
-  #   finish the version at its newest revision, or the version is still
-  #   current and the index has moved past the data pin's cut.
+  #   finish the version at its newest revision, or the index has shipped the
+  #   version again since the data pin's cut, by a rebuild of a version still
+  #   current at the cut or by a revert back to a closed one.
   #
   #   fast.at and fast.tip (commit, date, label selectors, and the newest
   #   indexed revision) are VERSION-EXACT and build-canonical: the right

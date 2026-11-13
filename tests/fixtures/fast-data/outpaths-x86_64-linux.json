@@ -31,6 +31,11 @@
    "0.2.0": [
     "8lcpp020kixhz1nw83dkwxm6d0wndprq"
    ]
+  },
+  "patchelf": {
+   "0.15.2": [
+    "8pchf0152hz1nw83dkwxm6d0wndprqkj"
+   ]
   }
  },
  "revisionCount": 3
