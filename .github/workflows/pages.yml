@@ -43,16 +43,17 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# Two jobs, as GitHub's own Pages workflow has them. deploy-pages asks the API
+# for the run's artifact, and asked from the job that uploaded it, less than a
+# second later, the listing intermittently came back "Found 0 artifact(s)". The
+# job boundary gives the listing time to catch up.
 jobs:
-  deploy:
+  build:
     # A failed indexing run leaves the tree it would have published unwritten,
-    # so there is nothing to deploy.
+    # so there is nothing to deploy. Skipping this job skips the deploy too.
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       # Pinned to the branch, not to github.sha. Under workflow_run that sha is
       # the commit the indexer checked out, which is the one *before* the commit
@@ -82,5 +83,13 @@ jobs:
         with:
           path: _site
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
